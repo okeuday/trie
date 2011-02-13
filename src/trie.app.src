@@ -1,0 +1,7 @@
+{application, trie,
+  [{description, "Trie Data Structure"},
+   {vsn, "0.0.2"},
+   {modules, [trie]},
+   {applications, [stdlib]},
+   {start_phases, []}]}.
+
