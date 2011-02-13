@@ -1,7 +1,7 @@
 Erlang Trie Implementation
 ==========================
 
-The data structure is only for storing keys as strings (lists of integers), but is able to get performance close to the process dictionary (based on results here http://okeuday.livejournal.com/16941.html).  So, this data structure is (currently) the quickest for storing key-value pairs such that the key is a string, if you ignore the process dictionary (which many argue should never be used).
+The data structure is only for storing keys as strings (lists of integers), but is able to get performance close to the process dictionary (based [on results here](http://okeuday.livejournal.com/16941.html)).  So, this data structure is (currently) the quickest for storing key-value pairs such that the key is a string, if you ignore the process dictionary (which many argue should never be used).
 
 The implementation stores leaf nodes as the string suffix because it is a PATRICIA trie (PATRICIA - Practical Algorithm to Retrieve Information Coded in Alphanumeric, D.R.Morrison (1968)).  Storing leaf nodes this way helps avoid single child leafs (compressing the tree a little bit).
 
