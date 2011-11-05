@@ -62,6 +62,7 @@
          filter/2,
          find/2,
          find_prefix/2,
+         find_similar/2,
          fold/3,
          foldl/3,
          foldr/3,
@@ -393,6 +394,71 @@ find_prefix([H | T], {I0, _, Data})
 
 find_prefix(_, []) ->
     error.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find the first key/value pair in a trie where the key shares a common prefix.===
+%% The first match is found based on alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_similar(Similar :: string(),
+                   Node :: trie()) -> {ok, string(), any()} | 'error'.
+
+find_similar([H | _], {I0, I1, _})
+    when H < I0; H > I1 ->
+    error;
+
+find_similar(_, []) ->
+    error;
+
+find_similar(Similar, Node) ->
+    find_similar_entry(Similar, [], error, Node).
+
+find_similar_entry([H | _], Key, LastValue, {I0, I1, _} = Node)
+    when H < I0; H > I1 ->
+    if
+        LastValue =:= error ->
+            find_similar_element(Key, Node);
+        true ->
+            {ok, Key, LastValue}
+    end;
+
+find_similar_entry([H] = Suffix, Key, _, {I0, _, Data} = Node)
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            NewKey = Key ++ Suffix,
+            if
+                Value =:= error ->
+                    find_similar_element(NewKey, ChildNode);
+                true ->
+                    {ok, NewKey, Value}
+            end;
+        Value =/= error, ChildNode =:= [] ->
+            {ok, Key ++ Suffix, Value};
+        true ->
+            find_similar_element(Key, Node)
+    end;
+
+find_similar_entry([H | T] = Suffix, Key, _, {I0, _, Data} = Node)
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            find_similar_entry(T, Key ++ [H], Value, ChildNode);
+        Value =/= error, ChildNode == T ->
+            {ok, Key ++ Suffix, Value};
+        true ->
+            find_similar_element(Key, Node)
+    end.
+
+find_similar_element(Key, Node) ->
+    {trie_itera_done, Result} = itera(fun(NewKey, Value, _, _) ->
+        {ok, NewKey, Value}
+    end, {trie_itera_done, error}, Key, Node),
+    Result.
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1393,6 +1459,11 @@ test() ->
      "aba",
      "ammmmmmm"] = trie:fetch_keys_similar("a", RootNode4),
     [] = trie:fetch_keys_similar("b", RootNode4),
+    {ok, "aa", 1} = trie:find_similar("aa", RootNode4),
+    {ok, "aaa", 2} = trie:find_similar("aaac", RootNode4),
+    {ok, "aaaaaaaa", 3} = trie:find_similar("aaaa", RootNode4),
+    {ok, "ab", 5} = trie:find_similar("abba", RootNode4),
+    {ok, "aa", 1} = trie:find_similar("a", RootNode4),
     ok.
 
 %%%------------------------------------------------------------------------
