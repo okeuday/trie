@@ -5,7 +5,17 @@
 %%% @doc
 %%% ==A trie data structure implementation.==
 %%% The trie (i.e., from "retrieval") data structure was invented by
-%%% Edward Fredkin (it is a form of radix sort).
+%%% Edward Fredkin (it is a form of radix sort).  The implementation stores
+%%% string suffixes as a list because it is a PATRICIA trie
+%%% (PATRICIA - Practical Algorithm to Retrieve Information
+%%%  Coded in Alphanumeric, D.R.Morrison (1968)).
+%%%
+%%% This Erlang trie implementation uses string (list of integers) keys and
+%%% is able to get performance close to the process dictionary when doing
+%%% key lookups (find or fetch, see http://okeuday.livejournal.com/16941.html).
+%%% Utilizing this trie, it is possible to avoid generating dynamic atoms
+%%% in various contexts.  Also, an added benefit to using this trie is that
+%%% the traversals preserve alphabetical ordering.
 %%% @end
 %%%
 %%% BSD LICENSE
@@ -46,7 +56,7 @@
 %%%
 %%% @author Michael Truog <mjtruog [at] gmail (dot) com>
 %%% @copyright 2010-2011 Michael Truog
-%%% @version 0.1.0 {@date} {@time}
+%%% @version 0.1.9 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -module(trie).
@@ -73,6 +83,7 @@
          from_list/1,
          is_key/2,
          is_prefix/2,
+         is_prefixed/2,
          iter/2,
          itera/3,
          map/2,
@@ -93,8 +104,8 @@
 %%% External interface functions
 %%%------------------------------------------------------------------------
 
--type trie() :: [] | {integer(), integer(), tuple()}.
 -type trie_return() :: {integer(), integer(), tuple()}.
+-type trie() :: [] | trie_return().
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -762,7 +773,8 @@ is_key(_, []) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
-%% ===Determine if a prefix exists in a trie.===
+%% ===Determine if the prefix provided exists within a trie.===
+%% So, find a string within the trie that matches only the prefix supplied.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -799,6 +811,39 @@ is_prefix([H | T], {I0, _, Data})
     end;
 
 is_prefix(_, []) ->
+    false.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Determine if the provided string has a prefix within a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec is_prefixed(string(), trie()) -> 'true' | 'false'.
+
+is_prefixed([H | _], {I0, I1, _})
+    when H < I0; H > I1 ->
+    false;
+
+is_prefixed([H], {I0, _, Data})
+    when is_integer(H) ->
+    {_, Value} = erlang:element(H - I0 + 1, Data),
+    (Value =/= error);
+
+is_prefixed([H | T], {I0, _, Data})
+    when is_integer(H) ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _} = Node, error} ->
+            is_prefixed(T, Node);
+        {{_, _, _}, _} ->
+            true;
+        {_, error} ->
+            false;
+        {_, _} ->
+            true
+    end;
+
+is_prefixed(_, []) ->
     false.
 
 %%-------------------------------------------------------------------------
@@ -1464,6 +1509,8 @@ test() ->
     {ok, "aaaaaaaa", 3} = trie:find_similar("aaaa", RootNode4),
     {ok, "ab", 5} = trie:find_similar("abba", RootNode4),
     {ok, "aa", 1} = trie:find_similar("a", RootNode4),
+    true = trie:is_prefixed("abacus", RootNode4),
+    false = trie:is_prefixed("ac", RootNode4),
     ok.
 
 %%%------------------------------------------------------------------------
