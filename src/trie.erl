@@ -84,6 +84,7 @@
          is_key/2,
          is_prefix/2,
          is_prefixed/2,
+         is_prefixed/3,
          iter/2,
          itera/3,
          map/2,
@@ -848,6 +849,60 @@ is_prefixed(_, []) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Determine if the provided string has an acceptable prefix within a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec is_prefixed(string(), string(), trie()) -> 'true' | 'false'.
+
+is_prefixed([H | _], _, {I0, I1, _})
+    when H < I0; H > I1 ->
+    false;
+
+is_prefixed([H], Exclude, {I0, _, Data})
+    when is_integer(H) ->
+    {_, Value} = erlang:element(H - I0 + 1, Data),
+    (not lists:member(H, Exclude)) andalso (Value =/= error);
+
+is_prefixed([H | T], Exclude, {I0, _, Data})
+    when is_integer(H) ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _} = Node, error} ->
+            is_prefixed(T, Exclude, Node);
+        {{_, _, _} = Node, _} ->
+            case lists:member(H, Exclude) of
+                true ->
+                    is_prefixed(T, Exclude, Node);
+                false ->
+                    true
+            end;
+        {_, error} ->
+            false;
+        {L, _} ->
+            case lists:member(H, Exclude) of
+                true ->
+                    is_prefixed_check(T, L, Exclude);
+                false ->
+                    true
+            end
+    end;
+
+is_prefixed(_, _, []) ->
+    false.
+
+is_prefixed_check([H | T1], [H | T2], Exclude) ->
+    case lists:member(H, Exclude) of
+        true ->
+            is_prefixed_check(T1, T2, Exclude);
+        false ->
+            true
+    end;
+
+is_prefixed_check(_, _, _) ->
+    false.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Iterate over a trie.===
 %% Traverses in alphabetical order.
 %% @end
@@ -1511,6 +1566,7 @@ test() ->
     {ok, "aa", 1} = trie:find_similar("a", RootNode4),
     true = trie:is_prefixed("abacus", RootNode4),
     false = trie:is_prefixed("ac", RootNode4),
+    false = trie:is_prefixed("abacus", "ab", RootNode4),
     ok.
 
 %%%------------------------------------------------------------------------
