@@ -349,6 +349,9 @@ find(_, []) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Find a value in a trie by prefix.===
+%% The atom 'prefix' is returned if the string supplied is a prefix
+%% for a key that has previously been stored within the trie, but no
+%% value was found, since there was no exact match for the string supplied.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -360,42 +363,29 @@ find_prefix([H | _], {I0, I1, _})
 
 find_prefix([H], {I0, _, Data})
     when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(Node) ->
-            if
-                Value =:= error ->
-                    prefix;
-                true ->
-                    {ok, Value}
-            end;
-        Node =:= [] ->
-            if
-                Value =:= error ->
-                    error;
-                true ->
-                    {ok, Value}
-            end;
-        true ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _}, error} ->
+            prefix;
+        {{_, _, _}, Value} ->
+            {ok, Value};
+        {_, error} ->
+            error;
+        {[], Value} ->
+            {ok, Value};
+        {_, _} ->
             prefix
     end;
 
 find_prefix([H | T], {I0, _, Data})
     when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    case Node of
-        {_, _, _} ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _} = Node, _} ->
             find_prefix(T, Node);
-        [] ->
-            prefix;
-        T ->
-            if
-                Value =:= error ->
-                    error;
-                true ->
-                    {ok, Value}
-            end;
-        L ->
+        {_, error} ->
+            error;
+        {T, Value} ->
+            {ok, Value};
+        {L, _} ->
             case lists:prefix(T, L) of
                 true ->
                     prefix;
@@ -774,8 +764,11 @@ is_key(_, []) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
-%% ===Determine if the prefix provided exists within a trie.===
-%% So, find a string within the trie that matches only the prefix supplied.
+%% ===Determine if the prefix provided has existed within a trie.===
+%% The function returns true if the string supplied is a prefix
+%% for a key that has previously been stored within the trie.
+%% If no values with the prefix matching key(s) were removed from the trie,
+%% then the prefix currently exists within the trie.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -787,27 +780,25 @@ is_prefix([H | _], {I0, I1, _})
 
 is_prefix([H], {I0, _, Data})
     when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(Node) ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _}, _} ->
             true;
-        Node =:= [] ->
+        {[], Value} ->
             (Value =/= error);
-        true ->
-            true
+        _ ->
+            false
     end;
 
 is_prefix([H | T], {I0, _, Data})
     when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    case Node of
-        {_, _, _} ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _} = Node, _} ->
             is_prefix(T, Node);
-        [] ->
+        {_, error} ->
+            false;
+        {T, _} ->
             true;
-        T ->
-            (Value =/= error);
-        L ->
+        {L, _} ->
             lists:prefix(T, L)
     end;
 
@@ -829,15 +820,13 @@ is_prefixed([H | _], {I0, I1, _})
 is_prefixed([H], {I0, _, Data})
     when is_integer(H) ->
     case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _}, error} ->
+        {_, error} ->
             false;
         {{_, _, _}, _} ->
             true;
-        {_, error} ->
-            false;
         {[], _} ->
             true;
-        {_, _} ->
+        _ ->
             false
     end;
 
@@ -852,7 +841,7 @@ is_prefixed([H | T], {I0, _, Data})
             false;
         {T, _} ->
             true;
-        {_, _} ->
+        _ ->
             false
     end;
 
@@ -886,7 +875,7 @@ is_prefixed_match([H], Matched, Exclude, {I0, _, Data})
             false;
         {[], _} ->
             Matched orelse (not lists:member(H, Exclude));
-        {_, _} ->
+        _ ->
             false
     end;
 
