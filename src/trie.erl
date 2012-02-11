@@ -20,7 +20,7 @@
 %%%
 %%% BSD LICENSE
 %%% 
-%%% Copyright (c) 2010-2011, Michael Truog <mjtruog at gmail dot com>
+%%% Copyright (c) 2010-2012, Michael Truog <mjtruog at gmail dot com>
 %%% All rights reserved.
 %%% 
 %%% Redistribution and use in source and binary forms, with or without
@@ -55,8 +55,8 @@
 %%% DAMAGE.
 %%%
 %%% @author Michael Truog <mjtruog [at] gmail (dot) com>
-%%% @copyright 2010-2011 Michael Truog
-%%% @version 0.1.9 {@date} {@time}
+%%% @copyright 2010-2012 Michael Truog
+%%% @version 0.2.0 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -module(trie).
@@ -76,6 +76,7 @@
          fold/3,
          foldl/3,
          foldr/3,
+         fold_match/4,
          fold_similar/4,
          foldl_similar/4,
          foldr_similar/4,
@@ -567,6 +568,226 @@ foldr_element(F, A, I, Offset, Key, Data) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Fold a function over the keys within a trie that matches a pattern.===
+%% Traverses in alphabetical order.  Uses "*" as a wildcard character
+%% within the pattern (it acts like a ".+" regex, and "**" is forbidden).
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec fold_match(Match :: string(),
+                 F :: fun((string(), any(), any()) -> any()),
+                 A :: any(),
+                 Node :: trie()) -> any().
+
+fold_match(_, _, A, []) ->
+    A;
+
+fold_match(Match, F, A, Node) ->
+    fold_match_node_1(Match, F, A, [], Node).
+
+fold_match_node_1([$* | _] = Match, F, A, Prefix, {I0, I1, Data}) ->
+    fold_match_element_1(Match, F, A, 1, I1 - I0 + 2, I0 - 1,
+                         Prefix, [], Data);
+
+fold_match_node_1([H | _], _, A, _, {I0, I1, _})
+    when H < I0; H > I1 ->
+    A;
+
+fold_match_node_1([H], F, A, Prefix, {I0, _, Data})
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        Value =/= error ->
+            if
+                is_tuple(ChildNode); ChildNode =:= [] ->
+                    F(lists:reverse([H | Prefix]), Value, A);
+                true ->
+                    A
+            end;
+        true ->
+            A
+    end;
+
+fold_match_node_1([H | T], F, A, Prefix, {I0, _, Data})
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    NewPrefix = [H | Prefix],
+    if
+        is_tuple(ChildNode) ->
+            fold_match_node_1(T, F, A, NewPrefix, ChildNode);
+        Value =/= error ->
+            case fold_match_node_key(T, ChildNode) of
+                true ->
+                    F(lists:reverse(NewPrefix) ++ ChildNode, Value, A);
+                false ->
+                    A
+            end;
+        true ->
+            A
+    end.
+
+fold_match_node_key([], []) ->
+    true;
+
+fold_match_node_key([], [_ | _]) ->
+    false;
+
+fold_match_node_key([$*], [_ | _]) ->
+    true;
+
+fold_match_node_key([$*, C | Match], [_ | L]) ->
+    true = C =/= $*,
+    case fold_match_node_key_wildcard(C, L) of
+        {ok, NewL} ->
+            fold_match_node_key(Match, NewL);
+        error ->
+            false
+    end;
+
+fold_match_node_key([C | Match], [C | L]) ->
+    fold_match_node_key(Match, L);
+
+fold_match_node_key(_, _) ->
+    false.
+
+fold_match_node_key_wildcard(_, []) ->
+    error;
+
+fold_match_node_key_wildcard(C, [C | L]) ->
+    {ok, L};
+
+fold_match_node_key_wildcard(C, [_ | L]) ->
+    fold_match_node_key_wildcard(C, L).
+
+fold_match_element_1(_, _, A, N, N, _, _, _, _) ->
+    A;
+
+fold_match_element_1([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    case Node of
+        {I0, I1, NextData} ->
+            NewMid = [(Offset + I) | Mid],
+            NewA = if
+                T =:= [], Value =/= error ->
+                    F(lists:reverse(NewMid ++ Prefix), Value, A);
+                true ->
+                    A
+            end,
+            fold_match_element_1(Match, F,
+                fold_match_element_N(Match, F, NewA,
+                    1, I1 - I0 + 2, I0 - 1,
+                    Prefix, NewMid, NextData),
+                I + 1, N, Offset, Prefix, Mid, Data);
+        _ ->
+            NewA = if
+                Value =/= error ->
+                    Suffix = lists:reverse([(Offset + I) | Mid]) ++ Node,
+                    case fold_match_node_key(Match, Suffix) of
+                        true ->
+                            F(lists:reverse(Prefix) ++ Suffix, Value, A);
+                        false ->
+                            A
+                    end;
+                true ->
+                    A
+            end,
+            fold_match_element_1(Match, F, NewA,
+                I + 1, N, Offset, Prefix, Mid, Data)
+    end.
+
+fold_match_element_N(_, _, A, N, N, _, _, _, _) ->
+    A;
+
+fold_match_element_N([$*] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    case Node of
+        {I0, I1, NextData} ->
+            NewMid = [(Offset + I) | Mid],
+            NewA = if
+                Value =/= error ->
+                    F(lists:reverse(NewMid ++ Prefix),
+                      Value, A);
+                true ->
+                    A
+            end,
+            fold_match_element_N(Match, F,
+                fold_match_element_N(Match, F, NewA,
+                    1, I1 - I0 + 2, I0 - 1,
+                    Prefix, NewMid, NextData),
+                I + 1, N, Offset, Prefix, Mid, Data);
+        _ ->
+            NewA = if
+                Value =/= error ->
+                    F(lists:reverse([(Offset + I) | Mid] ++ Prefix) ++ Node,
+                      Value, A);
+                true ->
+                    A
+            end,
+            fold_match_element_N(Match, F, NewA,
+                I + 1, N, Offset, Prefix, Mid, Data)
+    end;
+
+fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    case T of
+        [C | NewMatch] when C =:= Offset + I ->
+            NewPrefix = [(Offset + I) | Mid] ++ Prefix,
+            case NewMatch of
+                [_ | _] when is_tuple(Node) ->
+                    fold_match_node_1(NewMatch, F, A, NewPrefix, Node);
+                [_ | _] ->
+                    if
+                        Value =/= error ->
+                            case fold_match_node_key(NewMatch, Node) of
+                                true ->
+                                    F(lists:reverse(NewPrefix) ++ Node,
+                                      Value, A);
+                                false ->
+                                    A
+                            end;
+                        true ->
+                            A
+                    end;
+                [] ->
+                    case Node of
+                        [_ | _] ->
+                            A;
+                        _ when Value =/= error ->
+                            F(lists:reverse(NewPrefix), Value, A);
+                        _ ->
+                            A
+                    end
+            end;
+        _ ->
+            case Node of
+                {I0, I1, NextData} ->
+                    fold_match_element_N(Match, F,
+                        fold_match_element_N(Match, F, A,
+                            1, I1 - I0 + 2, I0 - 1,
+                            Prefix, [(Offset + I) | Mid], NextData),
+                        I + 1, N, Offset, Prefix, Mid, Data);
+                _ ->
+                    NewA = if
+                        Value =/= error ->
+                            Suffix = lists:reverse([(Offset + I) | Mid]) ++
+                                Node,
+                            case fold_match_node_key(Match, Suffix) of
+                                true ->
+                                    F(lists:reverse(Prefix) ++ Suffix,
+                                      Value, A);
+                                false ->
+                                    A
+                            end;
+                        true ->
+                            A
+                    end,
+                    fold_match_element_N(Match, F, NewA,
+                        I + 1, N, Offset, Prefix, Mid, Data)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Fold a function over the keys within a trie that share a common prefix.===
 %% Traverses in alphabetical order.
 %% @end
@@ -851,7 +1072,8 @@ is_prefixed(_, []) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Determine if the provided string has an acceptable prefix within a trie.===
-%% The prefix within the trie must match at least 1 character that is not within the excluded list of characters.
+%% The prefix within the trie must match at least 1 character that is not
+%% within the excluded list of characters.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -1148,6 +1370,7 @@ new_instance_state([H | T], V1, V0)
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Insert a value as the first list element in a trie instance.===
+%% The reverse of append/3.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -1581,6 +1804,21 @@ test() ->
     true = trie:is_prefixed("abacus", RootNode4),
     false = trie:is_prefixed("ac", RootNode4),
     false = trie:is_prefixed("abacus", "ab", RootNode4),
+    true = trie:foldl(fun(K, _, L) -> [K | L] end, [], RootNode4) ==
+           trie:fold_match("*", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    ["aaa"
+     ] = trie:fold_match("*aa", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    ["aaaaaaaaaaa",
+     "aaaaaaaa",
+     "aaa"
+     ] = trie:fold_match("aa*", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    ["aba"
+     ] = trie:fold_match("ab*", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    ["ammmmmmm"
+     ] = trie:fold_match("am*", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    ["aba",
+     "aaa"
+     ] = trie:fold_match("a*a", fun(K, _, L) -> [K | L] end, [], RootNode4),
     ok.
 
 %%%------------------------------------------------------------------------
