@@ -71,6 +71,7 @@
          fetch_keys_similar/2,
          filter/2,
          find/2,
+         find_match/2,
          find_prefix/2,
          find_similar/2,
          fold/3,
@@ -349,6 +350,122 @@ find(_, []) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Find a match with patterns held within a trie.===
+%% All patterns held within the trie use a wildcard character "*" to represent
+%% a regex of ".+".  "**" within the trie will result in undefined behavior
+%% (the pattern is malformed).  The function will search for the most specific
+%% match possible, given the input string and the trie contents.  The input
+%% string must not contain wildcard characters.  If you instead want to supply
+%% a pattern string to match the contents of the trie, see fold_match/4.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_match(string(), trie()) -> {ok, any(), any()} | 'error'.
+
+find_match(Match, Node) ->
+    find_match_node(Match, [], Node).
+
+find_match_node([H | T] = Match, Key, {I0, I1, Data} = Node)
+    when is_integer(H), H =/= $* ->
+    Result = if
+        H < I0; H > I1 ->
+            error;
+        true ->
+            {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+            if
+                T =:= [] ->
+                    if
+                        is_tuple(ChildNode); ChildNode =:= [] ->
+                            if
+                                Value =:= error ->
+                                    error;
+                                true ->
+                                    {ok, lists:reverse([H | Key]), Value}
+                            end;
+                        true ->
+                            error
+                    end;
+                true ->
+                    if
+                        is_tuple(ChildNode) ->
+                            find_match_node(T, [H | Key], ChildNode);
+                        Value =:= error ->
+                            error;
+                        true ->
+                            case fold_match_node_key(ChildNode, T) of
+                                true ->
+                                    {ok, lists:reverse([H | Key]) ++
+                                     ChildNode, Value};
+                                false ->
+                                    error
+                            end
+                    end
+            end
+    end,
+    if
+        Result =:= error ->
+            find_match_element_1(Match, Key, Node);
+        true ->
+            Result
+    end;
+
+find_match_node(_, _, []) ->
+    error.
+
+find_match_element_1([_ | T] = Match, Key, {I0, I1, Data})
+    when $* >= I0, $* =< I1 ->
+    {ChildNode, Value} = erlang:element($* - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            find_match_element_N(T, [$* | Key], Value, ChildNode);
+        Value =:= error ->
+            error;
+        true ->
+            Suffix = [$* | ChildNode],
+            case fold_match_node_key(Suffix, Match) of
+                true ->
+                    {ok, lists:reverse(Key) ++ Suffix, Value};
+                false ->
+                    error
+            end
+    end;
+
+find_match_element_1(_, _, _) ->
+    error.
+
+find_match_element_N([], _, error, _) ->
+    error;
+
+find_match_element_N([], Key, WildValue, _) ->
+    {ok, lists:reverse(Key), WildValue};
+
+find_match_element_N([H | T], Key, WildValue, {I0, I1, _} = Node)
+    when H < I0; H > I1 ->
+    find_match_element_N(T, Key, WildValue, Node);
+
+find_match_element_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            case find_match_node(T, [H | Key], ChildNode) of
+                error ->
+                    find_match_element_N(T, Key, WildValue, Node);
+                Result ->
+                    Result
+            end;
+        Value =:= error ->
+            find_match_element_N(T, Key, WildValue, Node);
+        true ->
+            case fold_match_node_key(ChildNode, T) of
+                true ->
+                    {ok, lists:reverse([H | Key]) ++ ChildNode, Value};
+                false ->
+                    find_match_element_N(T, Key, WildValue, Node)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Find a value in a trie by prefix.===
 %% The atom 'prefix' is returned if the string supplied is a prefix
 %% for a key that has previously been stored within the trie, but no
@@ -571,6 +688,8 @@ foldr_element(F, A, I, Offset, Key, Data) ->
 %% ===Fold a function over the keys within a trie that matches a pattern.===
 %% Traverses in alphabetical order.  Uses "*" as a wildcard character
 %% within the pattern (it acts like a ".+" regex, and "**" is forbidden).
+%% If you want to match a specific string without wildcards on trie values
+%% that contain wildcard characters, see find_match/2.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -753,7 +872,8 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
                         [_ | _] ->
                             A;
                         _ when Value =/= error ->
-                            F(lists:reverse(NewPrefix), Value, A);
+                            F(lists:reverse(NewPrefix),
+                              Value, A);
                         _ ->
                             A
                     end
@@ -1819,6 +1939,21 @@ test() ->
     ["aba",
      "aaa"
      ] = trie:fold_match("a*a", fun(K, _, L) -> [K | L] end, [], RootNode4),
+    RootNode6 = trie:new([
+        {"*",      1},
+        {"aa*",    2},
+        {"aa*b",   3},
+        {"aa*a*",  4},
+        {"aaaaa",  5}]),
+    {ok,"aa*",2} = trie:find_match("aaaa", RootNode6),
+    {ok,"aaaaa",5} = trie:find_match("aaaaa", RootNode6),
+    {ok,"*",1} = trie:find_match("aa", RootNode6),
+    {ok,"aa*",2} = trie:find_match("aab", RootNode6),
+    {ok,"aa*b",3} = trie:find_match("aabb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match("aabab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match("aababb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match("aabbab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match("aabbabb", RootNode6),
     ok.
 
 %%%------------------------------------------------------------------------
