@@ -93,6 +93,7 @@
          merge/3,
          new/0,
          new/1,
+         pattern_parse/2,
          prefix/3,
          size/1,
          store/2,
@@ -392,7 +393,7 @@ find_match_node([H | T] = Match, Key, {I0, I1, Data} = Node)
                         Value =:= error ->
                             error;
                         true ->
-                            case fold_match_node_key(ChildNode, T) of
+                            case wildcard_match_lists(ChildNode, T) of
                                 true ->
                                     {ok, lists:reverse([H | Key]) ++
                                      ChildNode, Value};
@@ -422,7 +423,7 @@ find_match_element_1([_ | T] = Match, Key, {I0, I1, Data})
             error;
         true ->
             Suffix = [$* | ChildNode],
-            case fold_match_node_key(Suffix, Match) of
+            case wildcard_match_lists(Suffix, Match) of
                 true ->
                     {ok, lists:reverse(Key) ++ Suffix, Value};
                 false ->
@@ -456,7 +457,7 @@ find_match_element_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
         Value =:= error ->
             find_match_element_N(T, Key, WildValue, Node);
         true ->
-            case fold_match_node_key(ChildNode, T) of
+            case wildcard_match_lists(ChildNode, T) of
                 true ->
                     {ok, lists:reverse([H | Key]) ++ ChildNode, Value};
                 false ->
@@ -735,7 +736,7 @@ fold_match_node_1([H | T], F, A, Prefix, {I0, _, Data})
         is_tuple(ChildNode) ->
             fold_match_node_1(T, F, A, NewPrefix, ChildNode);
         Value =/= error ->
-            case fold_match_node_key(T, ChildNode) of
+            case wildcard_match_lists(T, ChildNode) of
                 true ->
                     F(lists:reverse(NewPrefix) ++ ChildNode, Value, A);
                 false ->
@@ -744,39 +745,6 @@ fold_match_node_1([H | T], F, A, Prefix, {I0, _, Data})
         true ->
             A
     end.
-
-fold_match_node_key([], []) ->
-    true;
-
-fold_match_node_key([], [_ | _]) ->
-    false;
-
-fold_match_node_key([$*], [_ | _]) ->
-    true;
-
-fold_match_node_key([$*, C | Match], [_ | L]) ->
-    true = C =/= $*,
-    case fold_match_node_key_wildcard(C, L) of
-        {ok, NewL} ->
-            fold_match_node_key(Match, NewL);
-        error ->
-            false
-    end;
-
-fold_match_node_key([C | Match], [C | L]) ->
-    fold_match_node_key(Match, L);
-
-fold_match_node_key(_, _) ->
-    false.
-
-fold_match_node_key_wildcard(_, []) ->
-    error;
-
-fold_match_node_key_wildcard(C, [C | L]) ->
-    {ok, L};
-
-fold_match_node_key_wildcard(C, [_ | L]) ->
-    fold_match_node_key_wildcard(C, L).
 
 fold_match_element_1(_, _, A, N, N, _, _, _, _) ->
     A;
@@ -801,7 +769,7 @@ fold_match_element_1([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
             NewA = if
                 Value =/= error ->
                     Suffix = lists:reverse([(Offset + I) | Mid]) ++ Node,
-                    case fold_match_node_key(Match, Suffix) of
+                    case wildcard_match_lists(Match, Suffix) of
                         true ->
                             F(lists:reverse(Prefix) ++ Suffix, Value, A);
                         false ->
@@ -857,7 +825,7 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
                 [_ | _] ->
                     if
                         Value =/= error ->
-                            case fold_match_node_key(NewMatch, Node) of
+                            case wildcard_match_lists(NewMatch, Node) of
                                 true ->
                                     F(lists:reverse(NewPrefix) ++ Node,
                                       Value, A);
@@ -891,7 +859,7 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
                         Value =/= error ->
                             Suffix = lists:reverse([(Offset + I) | Mid]) ++
                                 Node,
-                            case fold_match_node_key(Match, Suffix) of
+                            case wildcard_match_lists(Match, Suffix) of
                                 true ->
                                     F(lists:reverse(Prefix) ++ Suffix,
                                       Value, A);
@@ -1489,6 +1457,53 @@ new_instance_state([H | T], V1, V0)
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Parse a string based on the supplied wildcard pattern.===
+%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "**" is forbidden.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern_parse(Pattern :: string(),
+                    L :: string()) -> string() | 'error'.
+
+pattern_parse(Pattern, L) ->
+    pattern_parse(Pattern, L, []).
+
+pattern_parse_element(_, [], _) ->
+    error;
+
+pattern_parse_element(C, [C | T], Segment) ->
+    {ok, T, lists:reverse(Segment)};
+
+pattern_parse_element(C, [H | T], L) ->
+    pattern_parse_element(C, T, [H | L]).
+
+pattern_parse([], [], Parsed) ->
+    lists:reverse(Parsed);
+
+pattern_parse([], [_ | _], _) ->
+    error;
+
+pattern_parse([$*], [_ | _] = L, Parsed) ->
+    lists:reverse([L | Parsed]);
+
+pattern_parse([$*, C | Pattern], [H | T], Parsed) ->
+    true = C =/= $*,
+    case pattern_parse_element(C, T, [H]) of
+        {ok, NewL, Segment} ->
+            pattern_parse(Pattern, NewL, [Segment | Parsed]);
+        error ->
+            error
+    end;
+
+pattern_parse([C | Pattern], [C | L], Parsed) ->
+    pattern_parse(Pattern, L, Parsed);
+
+pattern_parse(_, _, _) ->
+    error.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Insert a value as the first list element in a trie instance.===
 %% The reverse of append/3.
 %% @end
@@ -1954,6 +1969,14 @@ test() ->
     {ok,"aa*a*",4} = trie:find_match("aababb", RootNode6),
     {ok,"aa*a*",4} = trie:find_match("aabbab", RootNode6),
     {ok,"aa*a*",4} = trie:find_match("aabbabb", RootNode6),
+    ["aa"] = trie:pattern_parse("aa*", "aaaa"),
+    ["b"] = trie:pattern_parse("aa*", "aab"),
+    ["b"] = trie:pattern_parse("aa*b", "aabb"),
+    ["b", "b"] = trie:pattern_parse("aa*a*", "aabab"),
+    ["b", "bb"] = trie:pattern_parse("aa*a*", "aababb"),
+    ["bb", "b"] = trie:pattern_parse("aa*a*", "aabbab"),
+    ["bb", "bb"] = trie:pattern_parse("aa*a*", "aabbabb"),
+    error = trie:pattern_parse("aa*a*", "aaabb"),
     ok.
 
 %%%------------------------------------------------------------------------
@@ -1973,4 +1996,37 @@ tuple_move_i(N1, _, N1, T1, _) ->
 tuple_move_i(I1, I0, N1, T1, T0) ->
     tuple_move_i(I1 + 1, I0 + 1, N1,
         erlang:setelement(I1, T1, erlang:element(I0, T0)), T0).
+
+wildcard_match_lists_element(_, []) ->
+    error;
+
+wildcard_match_lists_element(C, [C | L]) ->
+    {ok, L};
+
+wildcard_match_lists_element(C, [_ | L]) ->
+    wildcard_match_lists_element(C, L).
+
+wildcard_match_lists([], []) ->
+    true;
+
+wildcard_match_lists([], [_ | _]) ->
+    false;
+
+wildcard_match_lists([$*], [_ | _]) ->
+    true;
+
+wildcard_match_lists([$*, C | Match], [_ | L]) ->
+    true = C =/= $*,
+    case wildcard_match_lists_element(C, L) of
+        {ok, NewL} ->
+            wildcard_match_lists(Match, NewL);
+        error ->
+            false
+    end;
+
+wildcard_match_lists([C | Match], [C | L]) ->
+    wildcard_match_lists(Match, L);
+
+wildcard_match_lists(_, _) ->
+    false.
 
