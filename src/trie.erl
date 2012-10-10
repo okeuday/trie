@@ -2112,3 +2112,19 @@ wildcard_match_lists([C | Match], [C | L]) ->
 wildcard_match_lists(_, L) ->
     wildcard_match_lists_valid(L, false).
 
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+internal_test_() ->
+    [
+        {"internal tests", ?_assertEqual(ok, test())}
+    ].
+
+proper_test_() ->
+    {timeout, 600, [
+        {"proper tests", ?_assert(trie_proper:qc_run())}
+    ]}.
+
+-endif.
+
