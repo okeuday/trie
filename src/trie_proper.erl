@@ -2,7 +2,7 @@
 %%% ex: set softtabstop=4 tabstop=4 shiftwidth=4 expandtab fileencoding=utf-8:
 
 -module(trie_proper).
-
+-ifdef(TEST).
 -behaviour(proper_statem).
 -include_lib("proper/include/proper.hrl").
 
@@ -133,3 +133,4 @@ key() ->
 value() ->
     integer().
 
+-endif.
