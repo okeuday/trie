@@ -73,8 +73,8 @@
          find/2,
          find_match/2,
          find_prefix/2,
+         find_prefix_longest/2,
          find_similar/2,
-         find_longest_prefix/2,
          fold/3,
          foldl/3,
          foldr/3,
@@ -526,6 +526,57 @@ find_prefix(_, []) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Find the longest key in a trie that is a prefix to the passed string.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_prefix_longest(Match :: string(),
+                          Node :: trie()) -> {ok, string(), any()} | 'error'.
+
+find_prefix_longest(Match, Node) when is_tuple(Node) ->
+    find_prefix_longest(Match, [], error, Node);
+find_prefix_longest(_Match, _Node) ->
+    error.
+
+find_prefix_longest([H | T], Key, LastMatch, {I0, I1, Data})
+    when is_integer(H), H >= I0, H =< I1 ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            %% If the prefix matched and there are other child leaf nodes
+            %% for this prefix, then update the last match to the current
+            %% prefix and continue recursing over the trie.
+            NewKey = [H | Key],
+            NewMatch = case Value of
+                           error -> LastMatch;
+                           _     -> {NewKey, Value}
+                       end,
+            find_prefix_longest(T, NewKey, NewMatch, ChildNode);
+        true ->
+            %% If this is a leaf node and the key for the current node is a
+            %% prefix for the passed value, then return a match on the current
+            %% node. Otherwise, return the last match we had found previously.
+            case lists:prefix(ChildNode, T) of
+                true when Value =/= error ->
+                    {ok, lists:reverse([H | Key], ChildNode), Value};
+                _ ->
+                    case LastMatch of
+                        {LastKey, LastValue} ->
+                            {ok, lists:reverse(LastKey), LastValue};
+                        error ->
+                            error
+                    end
+            end
+    end;
+
+find_prefix_longest(_Match, _Key, {LastKey, LastValue}, _Node) ->
+    {ok, lists:reverse(LastKey), LastValue};
+
+find_prefix_longest(_Match, _Key, error, _Node) ->
+    error.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Find the first key/value pair in a trie where the key shares a common prefix.===
 %% The first match is found based on alphabetical order.
 %% @end
@@ -588,58 +639,6 @@ find_similar_element(Key, Node) ->
         {ok, NewKey, Value}
     end, {trie_itera_done, error}, Key, Node),
     Result.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Find the first key/value pair in a trie that matches the longest prefix in the passed string.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec find_longest_prefix(Match :: string(),
-                          Node :: trie()) -> {ok, string(), any()} | 'error'.
-
-find_longest_prefix(Match, Node) when is_tuple(Node) ->
-    find_longest_prefix(Match, [], error, Node);
-find_longest_prefix(_Match, _Node) ->
-    error.
-
-find_longest_prefix([H | T], Key, LastMatch, {I0, I1, Data})
-    when is_integer(H), H >= I0, H =< I1 ->
-    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(ChildNode) ->
-            %% If the prefix matched and there are other child leaf nodes
-            %% for this prefix, then update the last match to the current
-            %% prefix and continue recursing over the trie.
-            NewKey = [H | Key],
-            NewMatch = case Value of
-                           error -> LastMatch;
-                           _     -> {NewKey, Value}
-                       end,
-            find_longest_prefix(T, NewKey, NewMatch, ChildNode);
-        true ->
-            %% If this is a leaf node and the key for the current node is a
-            %% prefix for the passed value, then return a match on the current
-            %% node. Otherwise, return the last match we had found previously.
-            case lists:prefix(ChildNode, T) of
-                true when Value =/= error ->
-                    {ok, lists:reverse([H | Key], ChildNode), Value};
-                _ ->
-                    case LastMatch of
-                        {LastKey, LastValue} ->
-                            {ok, lists:reverse(LastKey), LastValue};
-                        error ->
-                            error
-                    end
-            end
-    end;
-
-find_longest_prefix(_Match, _Key, {LastKey, LastValue}, _Node) ->
-    {ok, lists:reverse(LastKey), LastValue};
-
-find_longest_prefix(_Match, _Key, error, _Node) ->
-    error.
-
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -2025,6 +2024,14 @@ test() ->
     error = trie:find("aaaa", RootNode4),
     {ok, 2.5} = trie:find_prefix("aaaa", RootNode5),
     prefix = trie:find_prefix("aaaa", RootNode4),
+    error = trie:find_prefix_longest("a", RootNode4),
+    {ok, "aa", 1} = trie:find_prefix_longest("aa", RootNode4),
+    {ok, "aaa", 2} = trie:find_prefix_longest("aaaa", RootNode4),
+    {ok, "ab", 5} = trie:find_prefix_longest("absolut", RootNode4),
+    {ok, "aba", 6} = trie:find_prefix_longest("aba", RootNode4),
+    {ok, "aaaaaaaa", 3} = trie:find_prefix_longest("aaaaaaaaa", RootNode4),
+    error = trie:find_prefix_longest("bar", RootNode4),
+    {ok, "aaaaaaaaaaa", 4} = trie:find_prefix_longest("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
     2.5 = trie:fetch("aaaa", RootNode5),
     {'EXIT', {if_clause, _}} = (catch trie:fetch("aaaa", RootNode4)),
     RootNode4 = trie:erase("a", trie:erase("aaaa", RootNode5)),
@@ -2052,14 +2059,6 @@ test() ->
     {ok, "aaaaaaaa", 3} = trie:find_similar("aaaa", RootNode4),
     {ok, "ab", 5} = trie:find_similar("abba", RootNode4),
     {ok, "aa", 1} = trie:find_similar("a", RootNode4),
-    error = trie:find_longest_prefix("a", RootNode4),
-    {ok, "aa", 1} = trie:find_longest_prefix("aa", RootNode4),
-    {ok, "aaa", 2} = trie:find_longest_prefix("aaaa", RootNode4),
-    {ok, "ab", 5} = trie:find_longest_prefix("absolut", RootNode4),
-    {ok, "aba", 6} = trie:find_longest_prefix("aba", RootNode4),
-    {ok, "aaaaaaaa", 3} = trie:find_longest_prefix("aaaaaaaaa", RootNode4),
-    error = trie:find_longest_prefix("bar", RootNode4),
-    {ok, "aaaaaaaaaaa", 4} = trie:find_longest_prefix("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
     true = trie:is_prefixed("abacus", RootNode4),
     false = trie:is_prefixed("ac", RootNode4),
     false = trie:is_prefixed("abacus", "ab", RootNode4),
