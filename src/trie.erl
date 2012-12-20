@@ -112,6 +112,8 @@
 -type trie_return() :: {integer(), integer(), tuple()}.
 -type trie() :: [] | trie_return().
 
+-export_type([trie/0]).
+
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Append a value as a list element in a trie instance.===
