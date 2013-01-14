@@ -7,7 +7,7 @@
 -include_lib("proper/include/proper.hrl").
 
 %% external interface
--export([qc_run/0, correct/1]).
+-export([qc_run/1, correct/1]).
 
 %% proper_statem callbacks
 -export([command/1, initial_state/0, next_state/3,
@@ -26,8 +26,8 @@
 qc_opts() ->
     [{numtests, 10000}].
      
-qc_run() ->
-    proper:quickcheck(trie_proper:correct(trie), qc_opts()).
+qc_run(M) when is_atom(M) ->
+    proper:quickcheck(trie_proper:correct(M), qc_opts()).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from proper_statem

@@ -20,7 +20,7 @@
 %%%
 %%% BSD LICENSE
 %%% 
-%%% Copyright (c) 2010-2012, Michael Truog <mjtruog at gmail dot com>
+%%% Copyright (c) 2010-2013, Michael Truog <mjtruog at gmail dot com>
 %%% All rights reserved.
 %%% 
 %%% Redistribution and use in source and binary forms, with or without
@@ -55,8 +55,8 @@
 %%% DAMAGE.
 %%%
 %%% @author Michael Truog <mjtruog [at] gmail (dot) com>
-%%% @copyright 2010-2012 Michael Truog
-%%% @version 1.0.0 {@date} {@time}
+%%% @copyright 2010-2013 Michael Truog
+%%% @version 1.1.1 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -module(trie).
@@ -104,39 +104,12 @@
          update_counter/3,
          test/0]).
 
+-define(MODE_LIST, true).
+-include("trie.hrl").
+
 %%%------------------------------------------------------------------------
 %%% External interface functions
 %%%------------------------------------------------------------------------
-
--type trie_return() :: {integer(), integer(), tuple()}.
--type trie() :: [] | trie_return().
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Append a value as a list element in a trie instance.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec append(Key :: string(),
-             Value :: any(),
-             Node :: trie()) -> trie_return().
-
-append([_ | _] = Key, Value, Node) ->
-    ValueList = [Value],
-    update(Key, fun(OldValue) -> OldValue ++ ValueList end, ValueList, Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Append a list of values as a list element in a trie instance.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec append_list(Key :: string(),
-                  ValueList :: list(),
-                  Node :: trie()) -> trie_return().
-
-append_list([_ | _] = Key, ValueList, Node) ->
-    update(Key, fun(OldValue) -> OldValue ++ ValueList end, ValueList, Node).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -212,29 +185,6 @@ fetch([H | T], {I0, I1, Data})
         T when Value =/= error ->
             Value
     end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Fetch all the keys in a trie.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec fetch_keys(Node :: trie()) -> list(string()).
-
-fetch_keys(Node) ->
-    foldr(fun(Key, _, L) -> [Key | L] end, [], Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Fetch the keys within a trie that share a common prefix.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec fetch_keys_similar(Similar :: string(),
-                         Node :: trie()) -> list(string()).
-
-fetch_keys_similar(Similar, Node) ->
-    foldr_similar(Similar, fun(Key, _, L) -> [Key | L] end, [], Node).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -595,20 +545,6 @@ find_similar_element(Key, Node) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec fold(F :: fun((string(), any(), any()) -> any()),
-           A :: any(),
-           Node :: trie()) -> any().
-
-fold(F, A, Node) when is_function(F, 3) ->
-    foldl(F, A, Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Fold a function over the trie.===
-%% Traverses in alphabetical order.
-%% @end
-%%-------------------------------------------------------------------------
-
 -spec foldl(F :: fun((string(), any(), any()) -> any()),
             A :: any(),
             Node :: trie()) -> any().
@@ -919,21 +855,6 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec fold_similar(Similar :: string(),
-                   F :: fun((string(), any(), any()) -> any()),
-                   A :: any(),
-                   Node :: trie()) -> any().
-
-fold_similar(Similar, F, A, Node) ->
-    foldl_similar(Similar, F, A, Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Fold a function over the keys within a trie that share a common prefix.===
-%% Traverses in alphabetical order.
-%% @end
-%%-------------------------------------------------------------------------
-
 -spec foldl_similar(Similar :: string(),
                     F :: fun((string(), any(), any()) -> any()),
                     A :: any(),
@@ -1067,17 +988,6 @@ foreach_element(F, I, N, Offset, Key, Data) ->
                     foreach_element(F, I + 1, N, Offset, Key, Data)
             end
     end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Create a trie from a list.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec from_list(list()) -> trie().
-
-from_list(L) ->
-    new(L).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1437,80 +1347,7 @@ map_element(F, I, Offset, Key, Data) ->
                 {map_node(F, NewKey, Node), F(NewKey, Value)}))
     end.
 
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Merge two trie instance.===
-%% Update the second trie parameter with all of the elements
-%% found within the first trie parameter.
-%% @end
-%%-------------------------------------------------------------------------
-
--spec merge(F :: fun((string(), any(), any()) -> any()),
-            Node1 :: trie(),
-            Node2 :: trie()) -> trie().
-
-merge(F, Node1, []) when is_function(F, 3) ->
-    Node1;
-
-merge(F, [], Node2) when is_function(F, 3) ->
-    Node2;
-
-merge(F, Node1, Node2) when is_function(F, 3) ->
-    fold(fun (Key, V1, Node) ->
-            update(Key, fun (V2) -> F(Key, V1, V2) end, V1, Node)
-         end, Node2, Node1).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Create a new trie instance.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec new() -> [].
-
-new() ->
-    [].
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Create a new trie instance from a list.===
-%% The list may contain either: strings, 2 element tuples with a string as the
-%% first tuple element, or tuples with more than 2 elements (including records)
-%% with a string as the first element (second element if it is a record).
-%% If a list of records (or tuples larger than 2 elements) is provided,
-%% the whole record/tuple is stored as the value.
-%% @end
-%%-------------------------------------------------------------------------
-
--spec new(L :: list()) -> trie().
-
-new(L) ->
-    new_instance(L, new()).
-
-new_instance([], Node) ->
-    Node;
-
-new_instance([{[_ | _] = Key, Value} | T], Node) ->
-    new_instance(T, store(Key, Value, Node));
-
-new_instance([[_ | _] = Key | T], Node) ->
-    new_instance(T, store(Key, Node));
-
-new_instance([Tuple | T], Node)
-    when is_tuple(Tuple) ->
-    FirstElement = erlang:element(1, Tuple),
-    Key = if
-        is_atom(FirstElement) ->
-            erlang:element(2, Tuple);
-        true ->
-            FirstElement
-    end,
-    new_instance(T, store(Key, Tuple, Node)).
-
-new_instance_state([H | T], V1, V0)
-    when is_integer(H) ->
-    {{H, H, {{T, V1}}}, V0}.
-
+%XXX
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Parse a string based on the supplied wildcard pattern.===
@@ -1557,43 +1394,6 @@ pattern_parse([C | Pattern], [C | L], Parsed) ->
 
 pattern_parse(_, _, _) ->
     error.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Insert a value as the first list element in a trie instance.===
-%% The reverse of append/3.
-%% @end
-%%-------------------------------------------------------------------------
-
--spec prefix(Key :: string(),
-             Value :: any(),
-             Node :: trie()) -> trie_return().
-
-prefix([_ | _] = Key, Value, Node) ->
-    update(Key, fun(OldValue) -> [Value | OldValue] end, [Value], Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Size of a trie instance.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec size(Node :: trie()) -> non_neg_integer().
-
-size(Node) ->
-    fold(fun(_, _, I) -> I + 1 end, 0, Node).
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Store only a key in a trie instance.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec store(Key :: string(),
-            Node :: trie()) -> trie_return().
-
-store(Key, Node) ->
-    store(Key, empty, Node).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1809,19 +1609,6 @@ update([H | T] = Key, F, Initial, {I0, I1, Data})
                 erlang:setelement(I, Data, {{BH, BH, {{BT, Value}}}, error})},
             update(Key, F, Initial, NewNode)
     end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Update a counter in a trie.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec update_counter(Key :: string(),
-                     Increment :: number(),
-                     Node :: trie()) -> trie_return().
-
-update_counter(Key, Increment, Node) ->
-    update(Key, fun(I) -> I + Increment end, Increment, Node).
 
 %%-------------------------------------------------------------------------
 %% @private
@@ -2050,6 +1837,10 @@ test() ->
 %%% Private functions
 %%%------------------------------------------------------------------------
 
+new_instance_state([H | T], V1, V0)
+    when is_integer(H) ->
+    {{H, H, {{T, V1}}}, V0}.
+
 %% make a new tuple with arity N and default D, then
 %% move tuple T into the new tuple at index I
 tuple_move(I, N, T, D)
@@ -2123,7 +1914,7 @@ internal_test_() ->
 
 proper_test_() ->
     {timeout, 600, [
-        {"proper tests", ?_assert(trie_proper:qc_run())}
+        {"proper tests", ?_assert(trie_proper:qc_run(?MODULE))}
     ]}.
 
 -endif.
