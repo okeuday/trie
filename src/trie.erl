@@ -1399,7 +1399,6 @@ map_element(F, I, Offset, Key, Data) ->
                 {map_node(F, NewKey, Node), F(NewKey, Value)}))
     end.
 
-%XXX
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Parse a string based on the supplied wildcard pattern.===
@@ -1514,50 +1513,50 @@ store([H | T] = Key, NewValue, {I0, I1, Data})
             store(Key, NewValue, NewNode)
     end.
 
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Convert all entries in a trie to a list.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec to_list(Node :: trie()) -> list({string(), any()}).
-
-to_list([]) ->
-    [];
-
-to_list(Node) ->
-    to_list_node([], [], Node).
-
-to_list_node(L, Key, {I0, I1, Data}) ->
-    to_list_element(L, I1 - I0 + 1, I0 - 1, Key, Data).
-
-to_list_element(L, 0, _, _, _) ->
-    L;
-
-to_list_element(L, I, Offset, Key, Data) ->
-    {Node, Value} = erlang:element(I, Data),
-    NewKey = Key ++ [Offset + I],
-    if
-        is_list(Node) =:= false ->
-            if
-                Value =:= error ->
-                    to_list_element(
-                        to_list_node(L, NewKey, Node),
-                        I - 1, Offset, Key, Data);
-                true ->
-                    to_list_element(
-                        [{NewKey, Value} | to_list_node(L, NewKey, Node)],
-                        I - 1, Offset, Key, Data)
-            end;
-        true ->
-            if
-                Value =:= error ->
-                    to_list_element(L, I - 1, Offset, Key, Data);
-                true ->
-                    to_list_element([{NewKey ++ Node, Value} | L],
-                        I - 1, Offset, Key, Data)
-            end
-    end.
+%%%-------------------------------------------------------------------------
+%%% @doc
+%%% ===Convert all entries in a trie to a list.===
+%%% @end
+%%%-------------------------------------------------------------------------
+%
+%-spec to_list(Node :: trie()) -> list({string(), any()}).
+%
+%to_list([]) ->
+%    [];
+%
+%to_list(Node) ->
+%    to_list_node([], [], Node).
+%
+%to_list_node(L, Key, {I0, I1, Data}) ->
+%    to_list_element(L, I1 - I0 + 1, I0 - 1, Key, Data).
+%
+%to_list_element(L, 0, _, _, _) ->
+%    L;
+%
+%to_list_element(L, I, Offset, Key, Data) ->
+%    {Node, Value} = erlang:element(I, Data),
+%    NewKey = Key ++ [Offset + I],
+%    if
+%        is_list(Node) =:= false ->
+%            if
+%                Value =:= error ->
+%                    to_list_element(
+%                        to_list_node(L, NewKey, Node),
+%                        I - 1, Offset, Key, Data);
+%                true ->
+%                    to_list_element(
+%                        [{NewKey, Value} | to_list_node(L, NewKey, Node)],
+%                        I - 1, Offset, Key, Data)
+%            end;
+%        true ->
+%            if
+%                Value =:= error ->
+%                    to_list_element(L, I - 1, Offset, Key, Data);
+%                true ->
+%                    to_list_element([{NewKey ++ Node, Value} | L],
+%                        I - 1, Offset, Key, Data)
+%            end
+%    end.
 
 %%-------------------------------------------------------------------------
 %% @doc

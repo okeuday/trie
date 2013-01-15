@@ -59,10 +59,12 @@
 -ifdef(MODE_LIST).
 -define(TYPE_NAME, string).
 -define(TYPE_EMPTY, []).
+-define(TYPE_CHECK(V), is_list(V)).
 -else.
 -ifdef(MODE_BINARY).
 -define(TYPE_NAME, binary).
 -define(TYPE_EMPTY, <<>>).
+-define(TYPE_CHECK(V), is_binary(V)).
 -endif.
 -endif.
 
@@ -271,6 +273,18 @@ size(Node) ->
 store(Key, Node) ->
     store(Key, empty, Node).
 
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Convert all entries in a trie to a list.===
+%% The list is in alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec to_list(Node :: trie()) -> list({?TYPE_NAME(), any()}).
+
+to_list(Node) ->
+    foldr(fun (Key, Value, L) -> [{Key, Value} | L] end, [], Node).
+        
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Update a counter in a trie.===
