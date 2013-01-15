@@ -61,8 +61,13 @@
 -define(TYPE_EMPTY, []).
 -define(TYPE_CHECK(V), is_list(V)).
 -define(TYPE_H0T0, [H | T]).
+-define(TYPE_H0_, [H | _]).
 -define(TYPE_H1T1, [H1 | T1]).
+-define(TYPE_BHBT, [BH | BT]).
+-define(TYPE_KEYH0, Key ++ [H]).
+-define(TYPE_KEYH0T0, Key ++ [H] ++ T).
 -define(TYPE_KEYCHAR, Key ++ [Character]).
+-define(TYPE_KEYCHARNODE, Key ++ [Character] ++ Node).
 -define(TYPE_NEWKEYNODE, NewKey ++ Node).
 -else.
 -ifdef(MODE_BINARY).
@@ -70,8 +75,13 @@
 -define(TYPE_EMPTY, <<>>).
 -define(TYPE_CHECK(V), is_binary(V)).
 -define(TYPE_H0T0, <<H:8,T/binary>>).
+-define(TYPE_H0_, <<H:8,_/binary>>).
 -define(TYPE_H1T1, <<H1:8,T1/binary>>).
+-define(TYPE_BHBT, <<BH:8,BT/binary>>).
+-define(TYPE_KEYH0, <<Key/binary,H:8>>).
+-define(TYPE_KEYH0T0, <<Key/binary,H:8,T/binary>>).
 -define(TYPE_KEYCHAR, <<Key/binary,Character:8>>).
+-define(TYPE_KEYCHARNODE, <<Key/binary,Character:8,Node/binary>>).
 -define(TYPE_NEWKEYNODE, <<NewKey/binary,Node/binary>>).
 -endif.
 -endif.
@@ -352,6 +362,104 @@ fold(F, A, Node) when is_function(F, 3) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Fold a function over the trie.===
+%% Traverses in alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec foldl(F :: fun((?TYPE_NAME(), any(), any()) -> any()),
+            A :: any(),
+            Node :: trie()) -> any().
+
+foldl(F, A, ?TYPE_EMPTY) when is_function(F, 3) ->
+    A;
+
+foldl(F, A, Node) when is_function(F, 3) ->
+    foldl(F, A, ?TYPE_EMPTY, Node).
+
+foldl(F, A, Key, {I0, I1, Data}) ->
+    foldl_element(F, A, 1, I1 - I0 + 2, I0 - 1, Key, Data).
+
+foldl_element(_, A, N, N, _, _, _) ->
+    A;
+
+foldl_element(F, A, I, N, Offset, Key, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    Character = Offset + I,
+    if
+        ?TYPE_CHECK(Node) =:= false ->
+            if
+                Value =:= error ->
+                    foldl_element(F, foldl(F, A, ?TYPE_KEYCHAR, Node),
+                        I + 1, N, Offset, Key, Data);
+                true ->
+                    NewKey = ?TYPE_KEYCHAR,
+                    foldl_element(F,
+                        foldl(F, F(NewKey, Value, A), NewKey, Node),
+                        I + 1, N, Offset, Key, Data)
+            end;
+        true ->
+            if
+                Value =:= error ->
+                    foldl_element(F, A,
+                        I + 1, N, Offset, Key, Data);
+                true ->
+                    foldl_element(F, F(?TYPE_KEYCHARNODE, Value, A),
+                        I + 1, N, Offset, Key, Data)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fold a function over the trie in reverse.===
+%% Traverses in reverse alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec foldr(F :: fun((?TYPE_NAME(), any(), any()) -> any()),
+            A :: any(),
+            Node :: trie()) -> any().
+
+foldr(F, A, ?TYPE_EMPTY) when is_function(F, 3) ->
+    A;
+
+foldr(F, A, Node) when is_function(F, 3) ->
+    foldr(F, A, ?TYPE_EMPTY, Node).
+
+foldr(F, A, Key, {I0, I1, Data}) ->
+    foldr_element(F, A, I1 - I0 + 1, I0 - 1, Key, Data).
+
+foldr_element(_, A, 0, _, _, _) ->
+    A;
+
+foldr_element(F, A, I, Offset, Key, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    Character = Offset + I,
+    if
+        ?TYPE_CHECK(Node) =:= false ->
+            if
+                Value =:= error ->
+                    foldr_element(F, foldr(F, A, ?TYPE_KEYCHAR, Node),
+                        I - 1, Offset, Key, Data);
+                true ->
+                    NewKey = ?TYPE_KEYCHAR,
+                    foldr_element(F,
+                        F(NewKey, Value, foldr(F, A, NewKey, Node)),
+                        I - 1, Offset, Key, Data)
+            end;
+        true ->
+            if
+                Value =:= error ->
+                    foldr_element(F, A,
+                        I - 1, Offset, Key, Data);
+                true ->
+                    foldr_element(F, F(?TYPE_KEYCHARNODE, Value, A),
+                        I - 1, Offset, Key, Data)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Fold a function over the keys within a trie that share a common prefix.===
 %% Traverses in alphabetical order.
 %% @end
@@ -367,6 +475,153 @@ fold_similar(Similar, F, A, Node) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Fold a function over the keys within a trie that share a common prefix.===
+%% Traverses in alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec foldl_similar(Similar :: ?TYPE_NAME(),
+                    F :: fun((?TYPE_NAME(), any(), any()) -> any()),
+                    A :: any(),
+                    Node :: trie()) -> any().
+
+foldl_similar(?TYPE_H0_, _, A, {I0, I1, _})
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    A;
+
+foldl_similar(_, _, A, ?TYPE_EMPTY) ->
+    A;
+
+foldl_similar(?TYPE_H0T0, F, A, Node) ->
+    fold_similar_node(H, T, foldl, F, A, ?TYPE_EMPTY, error, Node).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fold a function over the keys within a trie that share a common prefix in reverse.===
+%% Traverses in reverse alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec foldr_similar(Similar :: ?TYPE_NAME(),
+                    F :: fun((?TYPE_NAME(), any(), any()) -> any()),
+                    A :: any(),
+                    Node :: trie()) -> any().
+
+foldr_similar(?TYPE_H0_, _, A, {I0, I1, _})
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    A;
+
+foldr_similar(_, _, A, ?TYPE_EMPTY) ->
+    A;
+
+foldr_similar(?TYPE_H0T0, F, A, Node) ->
+    fold_similar_node(H, T, foldr, F, A, ?TYPE_EMPTY, error, Node).
+
+fold_similar_node(H, _, Fold, F, A, Key, LastValue, {I0, I1, _} = Node)
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    if
+        LastValue =:= error ->
+            fold_similar_element(Fold, F, A, Key, Node);
+        Fold =:= foldl ->
+            fold_similar_element(Fold, F, F(Key, LastValue, A), Key, Node);
+        Fold =:= foldr ->
+            F(Key, LastValue, fold_similar_element(Fold, F, A, Key, Node))
+    end;
+
+fold_similar_node(H, ?TYPE_EMPTY, Fold, F, A, Key, _, {I0, _, Data} = Node)
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            NewKey = ?TYPE_KEYH0,
+            if
+                Value =:= error ->
+                    fold_similar_element(Fold, F, A, NewKey, ChildNode);
+                Fold =:= foldl ->
+                    fold_similar_element(Fold, F, F(NewKey, Value, A),
+                                         NewKey, ChildNode);
+                Fold =:= foldr ->
+                    F(NewKey, Value,
+                      fold_similar_element(Fold, F, A, NewKey, ChildNode))
+            end;
+        Value =/= error, ChildNode =:= ?TYPE_EMPTY ->
+            F(?TYPE_KEYH0, Value, A);
+        true ->
+            fold_similar_element(Fold, F, A, Key, Node)
+    end;
+
+fold_similar_node(H, T, Fold, F, A, Key, _, {I0, _, Data} = Node)
+    when is_integer(H) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            ?TYPE_H1T1 = T,
+            fold_similar_node(H1, T1, Fold, F, A,
+                ?TYPE_KEYH0, Value, ChildNode);
+        Value =/= error, ChildNode == T ->
+            F(?TYPE_KEYH0T0, Value, A);
+        true ->
+            fold_similar_element(Fold, F, A, Key, Node)
+    end.
+
+fold_similar_element(foldl, F, A, Key, Node) ->
+    foldl(F, A, Key, Node);
+
+fold_similar_element(foldr, F, A, Key, Node) ->
+    foldr(F, A, Key, Node).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Call a function for each element.===
+%% Traverses in alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec foreach(F :: fun((?TYPE_NAME(), any()) -> any()),
+              Node :: trie()) -> any().
+
+foreach(F, ?TYPE_EMPTY) when is_function(F, 2) ->
+    ok;
+
+foreach(F, Node) when is_function(F, 2) ->
+    foreach(F, ?TYPE_EMPTY, Node).
+
+foreach(F, Key, {I0, I1, Data}) ->
+    foreach_element(F, 1, I1 - I0 + 2, I0 - 1, Key, Data).
+
+foreach_element(_, N, N, _, _, _) ->
+    ok;
+
+foreach_element(F, I, N, Offset, Key, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    Character = Offset + I,
+    if
+        ?TYPE_CHECK(Node) =:= false ->
+            if
+                Value =:= error ->
+                    foreach(F, ?TYPE_KEYCHAR, Node),
+                    foreach_element(F, I + 1, N, Offset, Key, Data);
+                true ->
+                    NewKey = ?TYPE_KEYCHAR,
+                    F(NewKey, Value),
+                    foreach(F, NewKey, Node),
+                    foreach_element(F, I + 1, N, Offset, Key, Data)
+            end;
+        true ->
+            if
+                Value =:= error ->
+                    foreach_element(F, I + 1, N, Offset, Key, Data);
+                true ->
+                    F(?TYPE_KEYCHARNODE, Value),
+                    foreach_element(F, I + 1, N, Offset, Key, Data)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Create a trie from a list.===
 %% @end
 %%-------------------------------------------------------------------------
@@ -375,6 +630,98 @@ fold_similar(Similar, F, A, Node) ->
 
 from_list(L) ->
     new(L).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Determine if a key exists in a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec is_key(?TYPE_NAME(), trie()) -> boolean().
+
+is_key(_, ?TYPE_EMPTY) ->
+    false;
+
+is_key(?TYPE_H0T0, {_, _, _} = Node) ->
+    is_key_node(H, T, Node).
+
+is_key_node(H, _, {I0, I1, _})
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    false;
+
+is_key_node(H, ?TYPE_EMPTY, {I0, _, Data})
+    when is_integer(H) ->
+    {Node, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(Node); Node =:= ?TYPE_EMPTY ->
+            (Value =/= error);
+        true ->
+            false
+    end;
+
+is_key_node(H, T, {I0, _, Data})
+    when is_integer(H) ->
+    {Node, Value} = erlang:element(H - I0 + 1, Data),
+    case Node of
+        {_, _, _} ->
+            ?TYPE_H1T1 = T,
+            is_key_node(H1, T1, Node);
+        T ->
+            (Value =/= error);
+        _ ->
+            false
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Map a function over a trie.===
+%% Traverses in reverse alphabetical order.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec map(F :: fun((?TYPE_NAME(), any()) -> any()),
+          Node :: trie()) -> trie().
+
+map(F, ?TYPE_EMPTY = Node) when is_function(F, 2) ->
+    Node;
+
+map(F, Node) when is_function(F, 2) ->
+    map_node(F, ?TYPE_EMPTY, Node).
+
+map_node(F, Key, {I0, I1, Data}) ->
+    {I0, I1, map_element(F, I1 - I0 + 1, I0 - 1, Key, Data)};
+
+map_node(_, _, Node)
+    when ?TYPE_CHECK(Node) ->
+    Node.
+
+map_element(_, 0, _, _, Data) ->
+    Data;
+
+map_element(F, I, Offset, Key, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    Character = Offset + I,
+    NewKey = ?TYPE_KEYCHAR,
+    if
+        Node =:= ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    map_element(F, I - 1, Offset, Key, Data);
+                true ->
+                    map_element(F, I - 1, Offset, Key,
+                        erlang:setelement(I, Data, {Node, F(NewKey, Value)}))
+            end;
+        Value =:= error ->
+            map_element(F, I - 1, Offset, Key, erlang:setelement(I, Data,
+                {map_node(F, NewKey, Node), Value}));
+        ?TYPE_CHECK(Node) ->
+            map_element(F, I - 1, Offset, Key, erlang:setelement(I, Data,
+                {map_node(F, NewKey, Node), F(?TYPE_NEWKEYNODE, Value)}));
+        true ->
+            map_element(F, I - 1, Offset, Key, erlang:setelement(I, Data,
+                {map_node(F, NewKey, Node), F(NewKey, Value)}))
+    end.
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -446,6 +793,10 @@ new_instance([Tuple | T], Node)
 new_instance([Key | T], Node) ->
     new_instance(T, store(Key, Node)).
 
+new_instance_state(?TYPE_H0T0, V1, V0)
+    when is_integer(H) ->
+    {{H, H, {{T, V1}}}, V0}.
+
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Insert a value as the first list element in a trie instance.===
@@ -485,6 +836,74 @@ store(Key, Node) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Store a key/value pair in a trie instance.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec store(Key :: ?TYPE_NAME(),
+            NewValue :: any(),
+            Node :: trie()) -> trie_return().
+
+store(?TYPE_H0T0, NewValue, ?TYPE_EMPTY) ->
+    {H, H, {{T, NewValue}}};
+
+store(?TYPE_H0T0, NewValue, Node) ->
+    store_node(H, T, NewValue, Node).
+
+store_node(H, T, NewValue, {I0, I1, Data})
+    when is_integer(H), H < I0 ->
+    NewData = erlang:setelement(1,
+        tuple_move(I0 - H + 1, I1 - H + 1, Data, {?TYPE_EMPTY, error}),
+        {T, NewValue}),
+    {H, I1, NewData};
+
+store_node(H, T, NewValue, {I0, I1, Data})
+    when is_integer(H), H > I1 ->
+    N = H - I0 + 1,
+    NewData = erlang:setelement(N,
+        tuple_move(1, N, Data, {?TYPE_EMPTY, error}),
+        {T, NewValue}),
+    {I0, H, NewData};
+
+store_node(H, ?TYPE_EMPTY = T, NewValue, {I0, I1, Data})
+    when is_integer(H) ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    if
+        is_tuple(Node); Node =:= ?TYPE_EMPTY ->
+            {I0, I1, erlang:setelement(I, Data, {Node, NewValue})};
+        true ->
+            NewNode = {I0, I1, erlang:setelement(I, Data,
+                new_instance_state(Node, Value, error))},
+            store_node(H, T, NewValue, NewNode)
+    end;
+
+store_node(H, ?TYPE_H1T1 = T, NewValue, {I0, I1, Data})
+    when is_integer(H) ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    case Node of
+        {_, _, _} ->
+            {I0, I1, erlang:setelement(I, Data,
+                {store_node(H1, T1, NewValue, Node), Value})};
+        T ->
+            {I0, I1, erlang:setelement(I, Data, {Node, Value})};
+        ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    {I0, I1, erlang:setelement(I, Data, {T, NewValue})};
+                true ->
+                    {I0, I1, erlang:setelement(I, Data,
+                        new_instance_state(T, NewValue, Value))}
+            end;
+        ?TYPE_BHBT ->
+            NewNode = {I0, I1,
+                erlang:setelement(I, Data, {{BH, BH, {{BT, Value}}}, error})},
+            store_node(H, T, NewValue, NewNode)
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Convert all entries in a trie to a list.===
 %% The list is in alphabetical order.
 %% @end
@@ -495,6 +914,120 @@ store(Key, Node) ->
 to_list(Node) ->
     foldr(fun (Key, Value, L) -> [{Key, Value} | L] end, [], Node).
         
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Update a value in a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec update(?TYPE_NAME(),
+             F :: fun((any()) -> any()),
+             trie_return()) -> trie_return().
+
+update(?TYPE_H0T0, F, {_, _, _} = Node)
+    when is_function(F, 1) ->
+    update_node(H, T, F, Node).
+
+update_node(H, ?TYPE_EMPTY, F, {I0, I1, Data})
+    when is_integer(H), H >= I0, H =< I1 ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    if
+        is_tuple(Node); Node =:= ?TYPE_EMPTY, Value =/= error ->
+            {I0, I1, erlang:setelement(I, Data, {Node, F(Value)})}
+    end;
+
+update_node(H, T, F, {I0, I1, Data})
+    when is_integer(H), H >= I0, H =< I1 ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    case Node of
+        {_, _, _} ->
+            ?TYPE_H1T1 = T,
+            {I0, I1, erlang:setelement(I, Data,
+                {update_node(H1, T1, F, Node), Value})};
+        T ->
+            true = Value =/= error,
+            {I0, I1, erlang:setelement(I, Data, {Node, F(Value)})}
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Update or add a value in a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec update(Key :: ?TYPE_NAME(),
+             F :: fun((any()) -> any()),
+             Initial :: any(),
+             Node :: trie()) -> trie_return().
+
+update(Key, _, Initial, ?TYPE_EMPTY = Node) ->
+    store(Key, Initial, Node);
+
+update(?TYPE_H0T0, F, Initial, {_, _, _} = Node)
+    when is_function(F, 1) ->
+    update_node(H, T, F, Initial, Node).
+
+update_node(H, T, _, Initial, {I0, I1, Data})
+    when is_integer(H), H < I0 ->
+    NewData = erlang:setelement(1,
+        tuple_move(I0 - H + 1, I1 - H + 1, Data, {?TYPE_EMPTY, error}),
+        {T, Initial}),
+    {H, I1, NewData};
+
+update_node(H, T, _, Initial, {I0, I1, Data})
+    when is_integer(H), H > I1 ->
+    N = H - I0 + 1,
+    NewData = erlang:setelement(N,
+        tuple_move(1, N, Data, {?TYPE_EMPTY, error}),
+        {T, Initial}),
+    {I0, H, NewData};
+
+update_node(H, ?TYPE_EMPTY = T, F, Initial, {I0, I1, Data})
+    when is_integer(H) ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    if
+        is_tuple(Node); Node =:= ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    {I0, I1, erlang:setelement(I, Data, {Node, Initial})};
+                true ->
+                    {I0, I1, erlang:setelement(I, Data, {Node, F(Value)})}
+            end;
+        true ->
+            ?TYPE_BHBT = Node,
+            NewNode = {I0, I1,
+               erlang:setelement(I, Data, {{BH, BH, {{BT, Value}}}, error})},
+            update_node(H, T, F, Initial, NewNode)
+    end;
+
+update_node(H, T, F, Initial, {I0, I1, Data})
+    when is_integer(H) ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    case Node of
+        {_, _, _} ->
+            ?TYPE_H1T1 = T,
+            {I0, I1, erlang:setelement(I, Data,
+                {update_node(H1, T1, F, Initial, Node), Value})};
+        T ->
+            {I0, I1, erlang:setelement(I, Data, {Node, F(Value)})};
+        ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    {I0, I1, erlang:setelement(I, Data, {T, Initial})};
+                true ->
+                    {I0, I1, erlang:setelement(I, Data,
+                        new_instance_state(T, Initial, Value))}
+            end;
+        ?TYPE_BHBT ->
+            NewNode = {I0, I1,
+                erlang:setelement(I, Data, {{BH, BH, {{BT, Value}}}, error})},
+            update_node(H, T, F, Initial, NewNode)
+    end.
+
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Update a counter in a trie.===
