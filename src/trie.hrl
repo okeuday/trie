@@ -12,7 +12,7 @@
 %%%
 %%% This file contains trie functions utilized by both the string
 %%% (list of integers) trie implementation and the binary trie
-%%% implementation.
+%%% implementation (eventually, the binary trie still needs some work).
 %%% @end
 %%%
 %%% BSD LICENSE

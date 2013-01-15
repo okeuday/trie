@@ -10,7 +10,10 @@
 %%% (PATRICIA - Practical Algorithm to Retrieve Information
 %%%  Coded in Alphanumeric, D.R.Morrison (1968)).
 %%%
-%%% This Erlang trie implementation uses binary keys.
+%%% This Erlang trie implementation uses binary keys.  Using binary keys
+%%% means that other data structures are quicker alternatives, so this
+%%% module is probably not a good choice, unless it is used for functions
+%%% not available elsewhere.
 %%% @end
 %%%
 %%% BSD LICENSE
@@ -69,6 +72,7 @@
 
 %-define(MODE_BINARY, true).
 %-include("trie.hrl").
+% temporarily don't use the header file
 -define(TYPE_EMPTY, <<>>).
 -type trie_return() :: {integer(), integer(), tuple()}.
 -type trie() :: ?TYPE_EMPTY | trie_return().
