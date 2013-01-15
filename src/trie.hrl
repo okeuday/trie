@@ -12,7 +12,7 @@
 %%%
 %%% This file contains trie functions utilized by both the string
 %%% (list of integers) trie implementation and the binary trie
-%%% implementation (eventually, the binary trie still needs some work).
+%%% implementation.
 %%% @end
 %%%
 %%% BSD LICENSE
@@ -60,11 +60,19 @@
 -define(TYPE_NAME, string).
 -define(TYPE_EMPTY, []).
 -define(TYPE_CHECK(V), is_list(V)).
+-define(TYPE_H0T0, [H | T]).
+-define(TYPE_H1T1, [H1 | T1]).
+-define(TYPE_KEYCHAR, Key ++ [Character]).
+-define(TYPE_NEWKEYNODE, NewKey ++ Node).
 -else.
 -ifdef(MODE_BINARY).
 -define(TYPE_NAME, binary).
 -define(TYPE_EMPTY, <<>>).
 -define(TYPE_CHECK(V), is_binary(V)).
+-define(TYPE_H0T0, <<H:8,T/binary>>).
+-define(TYPE_H1T1, <<H1:8,T1/binary>>).
+-define(TYPE_KEYCHAR, <<Key/binary,Character:8>>).
+-define(TYPE_NEWKEYNODE, <<NewKey/binary,Node/binary>>).
 -endif.
 -endif.
 
@@ -73,7 +81,7 @@
 %%%------------------------------------------------------------------------
 
 -type trie_return() :: {integer(), integer(), tuple()}.
--type trie() :: [] | trie_return().
+-type trie() :: ?TYPE_EMPTY | trie_return().
 -export_type([trie/0]).
 
 %%-------------------------------------------------------------------------
@@ -105,6 +113,86 @@ append_list(Key, ValueList, Node) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Erase a value in a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec erase(Key :: ?TYPE_NAME(),
+            Node :: trie()) -> trie().
+
+erase(_, ?TYPE_EMPTY = Node) ->
+    Node;
+
+erase(?TYPE_H0T0, Node) ->
+    erase_node(H, T, Node).
+
+erase_node(H, _, {I0, I1, _} = Node)
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    Node;
+
+erase_node(H, T, {I0, I1, Data} = OldNode)
+    when is_integer(H) ->
+    I = H - I0 + 1,
+    {Node, Value} = erlang:element(I, Data),
+    if
+        T == Node ->
+            if
+                Value =:= error ->
+                    OldNode;
+                true ->
+                    {I0, I1, erlang:setelement(I, Data, {?TYPE_EMPTY, error})}
+            end;
+        T =:= ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    OldNode;
+                true ->
+                    {I0, I1, erlang:setelement(I, Data, {Node, error})}
+            end;
+        ?TYPE_CHECK(Node) ->
+            OldNode;
+        is_tuple(Node) ->
+            ?TYPE_H1T1 = T,
+            {I0, I1, erlang:setelement(I, Data,
+                {erase_node(H1, T1, Node), Value})}
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fetch a value from a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec fetch(?TYPE_NAME(),
+            trie_return()) -> any().
+
+fetch(?TYPE_H0T0, {_, _, _} = Node) ->
+    fetch_node(H, T, Node).
+
+fetch_node(H, T, {I0, I1, Data})
+    when is_integer(H), H >= I0, H =< I1 ->
+    {Node, Value} = erlang:element(H - I0 + 1, Data),
+    case T of
+        ?TYPE_EMPTY ->
+            if
+                is_tuple(Node); Node =:= ?TYPE_EMPTY ->
+                    if
+                        Value =/= error ->
+                            Value
+                    end
+            end;
+        ?TYPE_H1T1 ->
+            case Node of
+                {_, _, _} ->
+                    fetch_node(H1, T1, Node);
+                T when Value =/= error ->
+                    Value
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Fetch all the keys in a trie.===
 %% @end
 %%-------------------------------------------------------------------------
@@ -125,6 +213,128 @@ fetch_keys(Node) ->
 
 fetch_keys_similar(Similar, Node) ->
     foldr_similar(Similar, fun(Key, _, L) -> [Key | L] end, [], Node).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Filter a trie with a predicate function.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec filter(F :: fun((?TYPE_NAME(), any()) -> boolean()),
+             Node :: trie()) -> trie().
+
+filter(F, ?TYPE_EMPTY = Node) when is_function(F, 2) ->
+    Node;
+
+filter(F, Node) when is_function(F, 2) ->
+    filter_node(F, ?TYPE_EMPTY, Node).
+
+filter_node(F, Key, {I0, I1, Data}) ->
+    {I0, I1, filter_element(F, I1 - I0 + 1, I0 - 1, Key, Data)};
+
+filter_node(_, _, Node)
+    when ?TYPE_CHECK(Node) ->
+    Node.
+
+filter_element(_, 0, _, _, Data) ->
+    Data;
+
+filter_element(F, I, Offset, Key, Data) ->
+    {Node, Value} = erlang:element(I, Data),
+    Character = Offset + I,
+    if
+        Node =:= ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    filter_element(F, I - 1, Offset, Key, Data);
+                true ->
+                    case F(?TYPE_KEYCHAR, Value) of
+                        true ->
+                            filter_element(F, I - 1, Offset, Key, Data);
+                        false ->
+                            filter_element(F, I - 1, Offset, Key,
+                                erlang:setelement(I, Data,
+                                    {?TYPE_EMPTY, error}))
+                    end
+            end;
+        Value =:= error ->
+            filter_element(F, I - 1, Offset, Key, erlang:setelement(I, Data,
+                {filter_node(F, ?TYPE_KEYCHAR, Node), Value}));
+        true ->
+            NewKey = ?TYPE_KEYCHAR,
+            if
+                ?TYPE_CHECK(Node) ->
+                    case F(?TYPE_NEWKEYNODE, Value) of
+                        true ->
+                            filter_element(F, I - 1, Offset, Key, Data);
+                        false ->
+                            filter_element(F, I - 1, Offset, Key,
+                                erlang:setelement(I, Data,
+                                    {?TYPE_EMPTY, error}))
+                    end;
+                true ->
+                    case F(NewKey, Value) of
+                        true ->
+                            filter_element(F, I - 1, Offset, Key, Data);
+                        false ->
+                            filter_element(F, I - 1, Offset, Key,
+                                erlang:setelement(I, Data,
+                                    {filter_node(F, NewKey, Node), error}))
+                    end
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find a value in a trie.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find(?TYPE_NAME(), trie()) -> {ok, any()} | 'error'.
+
+find(_, ?TYPE_EMPTY) ->
+    error;
+
+find(?TYPE_H0T0, {_, _, _} = Node) ->
+    find_node(H, T, Node).
+
+find_node(H, _, {I0, I1, _})
+    when is_integer(H), H < I0;
+         is_integer(H), H > I1 ->
+    error;
+
+find_node(H, ?TYPE_EMPTY, {I0, _, Data})
+    when is_integer(H) ->
+    {Node, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(Node); Node =:= ?TYPE_EMPTY ->
+            if
+                Value =:= error ->
+                    error;
+                true ->
+                    {ok, Value}
+            end;
+        true ->
+            error
+    end;
+
+find_node(H, T, {I0, _, Data})
+    when is_integer(H) ->
+    {Node, Value} = erlang:element(H - I0 + 1, Data),
+    case Node of
+        {_, _, _} ->
+            ?TYPE_H1T1 = T,
+            find_node(H1, T1, Node);
+        T ->
+            if
+                Value =:= error ->
+                    error;
+                true ->
+                    {ok, Value}
+            end;
+        _ ->
+            error
+    end.
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -178,10 +388,10 @@ from_list(L) ->
             Node1 :: trie(),
             Node2 :: trie()) -> trie().
 
-merge(F, Node1, []) when is_function(F, 3) ->
+merge(F, Node1, ?TYPE_EMPTY) when is_function(F, 3) ->
     Node1;
 
-merge(F, [], Node2) when is_function(F, 3) ->
+merge(F, ?TYPE_EMPTY, Node2) when is_function(F, 3) ->
     Node2;
 
 merge(F, Node1, Node2) when is_function(F, 3) ->

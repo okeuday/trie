@@ -114,194 +114,6 @@
 
 %%-------------------------------------------------------------------------
 %% @doc
-%% ===Erase a value in a trie.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec erase(Key :: string(),
-            Node :: trie()) -> trie().
-
-erase([_ | _] = Key, Node) ->
-    erase_node(Key, Node).
-
-erase_node([_ | _], [] = OldNode) ->
-    OldNode;
-
-erase_node([H | _], {I0, I1, _} = OldNode)
-    when is_integer(H), H < I0;
-         is_integer(H), H > I1 ->
-    OldNode;
-
-erase_node([H | T], {I0, I1, Data} = OldNode)
-    when is_integer(H) ->
-    I = H - I0 + 1,
-    {Node, Value} = erlang:element(I, Data),
-    if
-        T == Node ->
-            if
-                Value =:= error ->
-                    OldNode;
-                true ->
-                    {I0, I1, erlang:setelement(I, Data, {[], error})}
-            end;
-        T =:= [] ->
-            if
-                Value =:= error ->
-                    OldNode;
-                true ->
-                    {I0, I1, erlang:setelement(I, Data, {Node, error})}
-            end;
-        is_list(Node) ->
-            OldNode;
-        is_tuple(Node) ->
-            {I0, I1, erlang:setelement(I, Data, {erase_node(T, Node), Value})}
-    end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Fetch a value from a trie.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec fetch(string(),
-            trie_return()) -> any().
-
-fetch([H], {I0, I1, Data})
-    when is_integer(H), H >= I0, H =< I1 ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(Node); Node =:= [] ->
-            if
-                Value =/= error ->
-                    Value
-            end
-    end;
-
-fetch([H | T], {I0, I1, Data})
-    when is_integer(H), H >= I0, H =< I1 ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    case Node of
-        {_, _, _} ->
-            fetch(T, Node);
-        T when Value =/= error ->
-            Value
-    end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Filter a trie with a predicate function.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec filter(F :: fun((string(), any()) -> boolean()),
-             Node :: trie()) -> trie().
-
-filter(F, [] = Node) when is_function(F, 2) ->
-    Node;
-
-filter(F, Node) when is_function(F, 2) ->
-    filter_node(F, [], Node).
-
-filter_node(F, Key, {I0, I1, Data}) ->
-    {I0, I1, filter_element(F, I1 - I0 + 1, I0 - 1, Key, Data)};
-
-filter_node(_, _, [_ | _] = L) ->
-    L.
-
-filter_element(_, 0, _, _, Data) ->
-    Data;
-
-filter_element(F, I, Offset, Key, Data) ->
-    {Node, Value} = erlang:element(I, Data),
-    if
-        Node =:= [] ->
-            if
-                Value =:= error ->
-                    filter_element(F, I - 1, Offset, Key, Data);
-                true ->
-                    case F(Key ++ [Offset + I], Value) of
-                        true ->
-                            filter_element(F, I - 1, Offset, Key, Data);
-                        false ->
-                            filter_element(F, I - 1, Offset, Key,
-                                erlang:setelement(I, Data, {[], error}))
-                    end
-            end;
-        Value =:= error ->
-            filter_element(F, I - 1, Offset, Key, erlang:setelement(I, Data,
-                {filter_node(F, Key ++ [Offset + I], Node), Value}));
-        true ->
-            NewKey = Key ++ [Offset + I],
-            if
-                is_list(Node) ->
-                    case F(NewKey ++ Node, Value) of
-                        true ->
-                            filter_element(F, I - 1, Offset, Key, Data);
-                        false ->
-                            filter_element(F, I - 1, Offset, Key,
-                                erlang:setelement(I, Data, {[], error}))
-                    end;
-                true ->
-                    case F(NewKey, Value) of
-                        true ->
-                            filter_element(F, I - 1, Offset, Key, Data);
-                        false ->
-                            filter_element(F, I - 1, Offset, Key,
-                                erlang:setelement(I, Data,
-                                    {filter_node(F, NewKey, Node), error}))
-                    end
-            end
-    end.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Find a value in a trie.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec find(string(), trie()) -> {ok, any()} | 'error'.
-
-find([H | _], {I0, I1, _})
-    when H < I0; H > I1 ->
-    error;
-
-find([H], {I0, _, Data})
-    when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(Node); Node =:= [] ->
-            if
-                Value =:= error ->
-                    error;
-                true ->
-                    {ok, Value}
-            end;
-        true ->
-            error
-    end;
-
-find([H | T], {I0, _, Data})
-    when is_integer(H) ->
-    {Node, Value} = erlang:element(H - I0 + 1, Data),
-    case Node of
-        {_, _, _} ->
-            find(T, Node);
-        T ->
-            if
-                Value =:= error ->
-                    error;
-                true ->
-                    {ok, Value}
-            end;
-        _ ->
-            error
-    end;
-
-find(_, []) ->
-    error.
-
-%%-------------------------------------------------------------------------
-%% @doc
 %% ===Find a match with patterns held within a trie.===
 %% All patterns held within the trie use a wildcard character "*" to represent
 %% a regex of ".+".  "**" within the trie will result in undefined behavior
@@ -1513,51 +1325,6 @@ store([H | T] = Key, NewValue, {I0, I1, Data})
             store(Key, NewValue, NewNode)
     end.
 
-%%%-------------------------------------------------------------------------
-%%% @doc
-%%% ===Convert all entries in a trie to a list.===
-%%% @end
-%%%-------------------------------------------------------------------------
-%
-%-spec to_list(Node :: trie()) -> list({string(), any()}).
-%
-%to_list([]) ->
-%    [];
-%
-%to_list(Node) ->
-%    to_list_node([], [], Node).
-%
-%to_list_node(L, Key, {I0, I1, Data}) ->
-%    to_list_element(L, I1 - I0 + 1, I0 - 1, Key, Data).
-%
-%to_list_element(L, 0, _, _, _) ->
-%    L;
-%
-%to_list_element(L, I, Offset, Key, Data) ->
-%    {Node, Value} = erlang:element(I, Data),
-%    NewKey = Key ++ [Offset + I],
-%    if
-%        is_list(Node) =:= false ->
-%            if
-%                Value =:= error ->
-%                    to_list_element(
-%                        to_list_node(L, NewKey, Node),
-%                        I - 1, Offset, Key, Data);
-%                true ->
-%                    to_list_element(
-%                        [{NewKey, Value} | to_list_node(L, NewKey, Node)],
-%                        I - 1, Offset, Key, Data)
-%            end;
-%        true ->
-%            if
-%                Value =:= error ->
-%                    to_list_element(L, I - 1, Offset, Key, Data);
-%                true ->
-%                    to_list_element([{NewKey ++ Node, Value} | L],
-%                        I - 1, Offset, Key, Data)
-%            end
-%    end.
-
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Update a value in a trie.===
@@ -1690,13 +1457,17 @@ test() ->
     prefix = trie:find_prefix("aa", RootNode0),
     {ok, 2} = trie:find_prefix("aac", RootNode0),
     error = trie:find_prefix("aacX", RootNode0),
-    {97,97,{{{97,98,{{{98,99,{{"cde",3},{[],2}}},error},{"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
+    {97,97,{{{97,98,{{{98,99,{{"cde",3},{[],2}}},error},
+     {"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
         RootNode1 = trie:store("aabcde", 3, RootNode0),
-    {97,97,{{{97,98,{{{98,99,{{"cde",13},{[],12}}},error},{"cdefghijklmnopqrstuvwxyz",11}}},error}}} =
+    {97,97,{{{97,98,{{{98,99,{{"cde",13},{[],12}}},error},
+     {"cdefghijklmnopqrstuvwxyz",11}}},error}}} =
         map(fun(_, V) -> V + 10 end, RootNode1),
-    {97,97,{{{97,98,{{{98,99,{{[],error},{[],error}}},error},{"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
+    {97,97,{{{97,98,{{{98,99,{{[],error},{[],error}}},error},
+     {"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
         filter(fun(_, V) -> V =< 1 end, RootNode1),
-    {97,97,{{{97,98,{{{98,99,{{[],error},{[],2}}},error},{"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
+    {97,97,{{{97,98,{{{98,99,{{[],error},{[],2}}},error},
+     {"cdefghijklmnopqrstuvwxyz",1}}},error}}} =
         filter(fun(_, V) -> V =< 2 end, RootNode1),
     ["aabcde", "aac", "abcdefghijklmnopqrstuvwxyz"] =
         trie:fetch_keys(RootNode1),
