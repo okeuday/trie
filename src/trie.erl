@@ -22,10 +22,10 @@
 %%% 
 %%% Copyright (c) 2010-2013, Michael Truog <mjtruog at gmail dot com>
 %%% All rights reserved.
-%%% 
+%%%
 %%% Redistribution and use in source and binary forms, with or without
 %%% modification, are permitted provided that the following conditions are met:
-%%% 
+%%%
 %%%     * Redistributions of source code must retain the above copyright
 %%%       notice, this list of conditions and the following disclaimer.
 %%%     * Redistributions in binary form must reproduce the above copyright
@@ -38,7 +38,7 @@
 %%%     * The name of the author may not be used to endorse or promote
 %%%       products derived from this software without specific prior
 %%%       written permission
-%%% 
+%%%
 %%% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
 %%% CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,
 %%% INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
@@ -73,6 +73,7 @@
          find/2,
          find_match/2,
          find_prefix/2,
+         find_prefix_longest/2,
          find_similar/2,
          fold/3,
          foldl/3,
@@ -246,7 +247,7 @@ filter_element(F, I, Offset, Key, Data) ->
                             filter_element(F, I - 1, Offset, Key, Data);
                         false ->
                             filter_element(F, I - 1, Offset, Key,
-                                erlang:setelement(I, Data, 
+                                erlang:setelement(I, Data,
                                     {filter_node(F, NewKey, Node), error}))
                     end
             end
@@ -471,6 +472,57 @@ find_prefix([H | T], {I0, _, Data})
     end;
 
 find_prefix(_, []) ->
+    error.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find the longest key in a trie that is a prefix to the passed string.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_prefix_longest(Match :: string(),
+                          Node :: trie()) -> {ok, string(), any()} | 'error'.
+
+find_prefix_longest(Match, Node) when is_tuple(Node) ->
+    find_prefix_longest(Match, [], error, Node);
+find_prefix_longest(_Match, _Node) ->
+    error.
+
+find_prefix_longest([H | T], Key, LastMatch, {I0, I1, Data})
+    when is_integer(H), H >= I0, H =< I1 ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            %% If the prefix matched and there are other child leaf nodes
+            %% for this prefix, then update the last match to the current
+            %% prefix and continue recursing over the trie.
+            NewKey = [H | Key],
+            NewMatch = case Value of
+                           error -> LastMatch;
+                           _     -> {NewKey, Value}
+                       end,
+            find_prefix_longest(T, NewKey, NewMatch, ChildNode);
+        true ->
+            %% If this is a leaf node and the key for the current node is a
+            %% prefix for the passed value, then return a match on the current
+            %% node. Otherwise, return the last match we had found previously.
+            case lists:prefix(ChildNode, T) of
+                true when Value =/= error ->
+                    {ok, lists:reverse([H | Key], ChildNode), Value};
+                _ ->
+                    case LastMatch of
+                        {LastKey, LastValue} ->
+                            {ok, lists:reverse(LastKey), LastValue};
+                        error ->
+                            error
+                    end
+            end
+    end;
+
+find_prefix_longest(_Match, _Key, {LastKey, LastValue}, _Node) ->
+    {ok, lists:reverse(LastKey), LastValue};
+
+find_prefix_longest(_Match, _Key, error, _Node) ->
     error.
 
 %%-------------------------------------------------------------------------
@@ -712,7 +764,7 @@ fold_match_element_1(Match, F, A, I, N, Offset, Prefix, Mid, Data)
         _ ->
             erlang:exit(badarg)
     end;
-            
+
 fold_match_element_1([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
     {Node, Value} = erlang:element(I, Data),
     case Node of
@@ -1622,7 +1674,7 @@ test() ->
     {97,97,{{"b",empty}}} = trie:new(["ab"]),
     {97,97,{{"bc",empty}}} = trie:new(["abc"]),
     {97,97,{{"b",empty}}} = trie:new(["ab"]),
-    {97,97,{{{97,98,{{[],empty},{[],empty}}},error}}} = 
+    {97,97,{{{97,98,{{[],empty},{[],empty}}},error}}} =
         trie:new(["ab","aa"]),
     {97,97,{{{97,98,{{"c",empty},{"c",empty}}},error}}} =
         trie:new(["abc","aac"]),
@@ -1759,6 +1811,14 @@ test() ->
     error = trie:find("aaaa", RootNode4),
     {ok, 2.5} = trie:find_prefix("aaaa", RootNode5),
     prefix = trie:find_prefix("aaaa", RootNode4),
+    error = trie:find_prefix_longest("a", RootNode4),
+    {ok, "aa", 1} = trie:find_prefix_longest("aa", RootNode4),
+    {ok, "aaa", 2} = trie:find_prefix_longest("aaaa", RootNode4),
+    {ok, "ab", 5} = trie:find_prefix_longest("absolut", RootNode4),
+    {ok, "aba", 6} = trie:find_prefix_longest("aba", RootNode4),
+    {ok, "aaaaaaaa", 3} = trie:find_prefix_longest("aaaaaaaaa", RootNode4),
+    error = trie:find_prefix_longest("bar", RootNode4),
+    {ok, "aaaaaaaaaaa", 4} = trie:find_prefix_longest("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
     2.5 = trie:fetch("aaaa", RootNode5),
     {'EXIT', {if_clause, _}} = (catch trie:fetch("aaaa", RootNode4)),
     RootNode4 = trie:erase("a", trie:erase("aaaa", RootNode5)),
@@ -1918,4 +1978,3 @@ proper_test_() ->
     ]}.
 
 -endif.
-

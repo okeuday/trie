@@ -72,6 +72,7 @@
 
 -type trie_return() :: {integer(), integer(), tuple()}.
 -type trie() :: [] | trie_return().
+-export_type([trie/0]).
 
 %%-------------------------------------------------------------------------
 %% @doc
