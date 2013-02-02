@@ -85,6 +85,7 @@
          foreach/2,
          from_list/1,
          is_key/2,
+         is_pattern/1,
          is_prefix/2,
          is_prefixed/2,
          is_prefixed/3,
@@ -615,6 +616,31 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
                         I + 1, N, Offset, Prefix, Mid, Data)
             end
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Test to determine if a string is a pattern.===
+%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "**" is forbidden.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec is_pattern(Pattern :: string()) -> 'true' | 'false'.
+
+is_pattern(Pattern) ->
+    is_pattern(Pattern, false).
+
+is_pattern([], Result) ->
+    Result;
+
+is_pattern([$*, $* | _], _) ->
+    erlang:exit(badarg);
+
+is_pattern([$* | Pattern], _) ->
+    is_pattern(Pattern, true);
+
+is_pattern([_ | Pattern], Result) ->
+    is_pattern(Pattern, Result).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1169,6 +1195,9 @@ test() ->
     ["bb", "b"] = trie:pattern_parse("aa*a*", "aabbab"),
     ["bb", "bb"] = trie:pattern_parse("aa*a*", "aabbabb"),
     error = trie:pattern_parse("aa*a*", "aaabb"),
+    false = trie:is_pattern("abcdef"),
+    true = trie:is_pattern("abc*d*ef"),
+    {'EXIT',badarg} = (catch trie:is_pattern("abc**ef")),
     ok.
 
 %%%------------------------------------------------------------------------
