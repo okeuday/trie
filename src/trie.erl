@@ -1198,6 +1198,14 @@ test() ->
     false = trie:is_pattern("abcdef"),
     true = trie:is_pattern("abc*d*ef"),
     {'EXIT',badarg} = (catch trie:is_pattern("abc**ef")),
+    RootNode7 = trie:from_list([{"00", zeros}, {"11", ones}]),
+    RootNode8 = trie:from_list([{"0", zero}, {"1", one}]),
+    ["00"] = trie:fetch_keys_similar("02", RootNode7),
+    [] = trie:fetch_keys_similar("2", RootNode7),
+    ["11"] = trie:fetch_keys_similar("1", RootNode7),
+    ["1"] = trie:fetch_keys_similar("1", RootNode8),
+    ["0"] = trie:fetch_keys_similar("0", RootNode8),
+    ["00"] = trie:fetch_keys_similar("0", RootNode7),
     ok.
 
 %%%------------------------------------------------------------------------
