@@ -1,5 +1,5 @@
-%%% -*- coding: utf-8; Mode: erlang; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*-
-%%% ex: set softtabstop=4 tabstop=4 shiftwidth=4 expandtab fileencoding=utf-8:
+%-*-Mode:erlang;coding:utf-8;tab-width:4;c-basic-offset:4;indent-tabs-mode:()-*-
+% ex: set ft=erlang fenc=utf-8 sts=4 ts=4 sw=4 et:
 %%%
 %%%------------------------------------------------------------------------
 %%% @doc
@@ -935,6 +935,9 @@ pattern_parse_element(_, [], _) ->
 pattern_parse_element(C, [C | T], Segment) ->
     {ok, T, lists:reverse(Segment)};
 
+pattern_parse_element(_, [$* | _], _) ->
+    erlang:exit(badarg);
+
 pattern_parse_element(C, [H | T], L) ->
     pattern_parse_element(C, T, [H | L]).
 
@@ -944,11 +947,16 @@ pattern_parse([], [], Parsed) ->
 pattern_parse([], [_ | _], _) ->
     error;
 
+pattern_parse([_ | _], [$* | _], _) ->
+    erlang:exit(badarg);
+
 pattern_parse([$*], [_ | _] = L, Parsed) ->
     lists:reverse([L | Parsed]);
 
+pattern_parse([$*, $* | _], [_ | _], _) ->
+    erlang:exit(badarg);
+
 pattern_parse([$*, C | Pattern], [H | T], Parsed) ->
-    true = C =/= $*,
     case pattern_parse_element(C, T, [H]) of
         {ok, NewL, Segment} ->
             pattern_parse(Pattern, NewL, [Segment | Parsed]);
