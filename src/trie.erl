@@ -239,57 +239,6 @@ find_match_element_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
-%% ===Find a value in a trie by prefix.===
-%% The atom 'prefix' is returned if the string supplied is a prefix
-%% for a key that has previously been stored within the trie, but no
-%% value was found, since there was no exact match for the string supplied.
-%% @end
-%%-------------------------------------------------------------------------
-
--spec find_prefix(string(), trie()) -> {ok, any()} | 'prefix' | 'error'.
-
-find_prefix([H | _], {I0, I1, _})
-    when H < I0; H > I1 ->
-    error;
-
-find_prefix([H], {I0, _, Data})
-    when is_integer(H) ->
-    case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _}, error} ->
-            prefix;
-        {{_, _, _}, Value} ->
-            {ok, Value};
-        {_, error} ->
-            error;
-        {[], Value} ->
-            {ok, Value};
-        {_, _} ->
-            prefix
-    end;
-
-find_prefix([H | T], {I0, _, Data})
-    when is_integer(H) ->
-    case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _} = Node, _} ->
-            find_prefix(T, Node);
-        {_, error} ->
-            error;
-        {T, Value} ->
-            {ok, Value};
-        {L, _} ->
-            case lists:prefix(T, L) of
-                true ->
-                    prefix;
-                false ->
-                    error
-            end
-    end;
-
-find_prefix(_, []) ->
-    error.
-
-%%-------------------------------------------------------------------------
-%% @doc
 %% ===Find the longest key in a trie that is a prefix to the passed string.===
 %% @end
 %%-------------------------------------------------------------------------
@@ -1311,6 +1260,8 @@ wildcard_match_lists([C | Match], [C | L]) ->
 wildcard_match_lists(_, L) ->
     wildcard_match_lists_valid(L, false).
 
+check_prefix(KeyEnding1, KeyEnding2)->
+    lists:prefix(KeyEnding1, KeyEnding2).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

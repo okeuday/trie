@@ -67,6 +67,7 @@
          fetch/2,
          fetch_keys/1,
          fetch_keys_similar/2,
+         find_prefix/2,
          filter/2,
          find/2,
          fold/3,
@@ -122,13 +123,13 @@ test() ->
             {<<"abcdefghijklmnopqrstuvwxyz">>, 1},{<<"aac">>, 2}]),
     {ok, 1} = btrie:find(<<"abcdefghijklmnopqrstuvwxyz">>, RootNode0),
     error = btrie:find(<<"abcdefghijklmnopqrstuvwxy">>, RootNode0),
-%    {ok, 1} = btrie:find_prefix("abcdefghijklmnopqrstuvwxyz", RootNode0),
-%    prefix = btrie:find_prefix("abcdefghijklmnopqrstuvwxy", RootNode0),
-%    error = btrie:find_prefix("abcdefghijklmnopqrstuvwxyzX", RootNode0),
-%    prefix = btrie:find_prefix("a", RootNode0),
-%    prefix = btrie:find_prefix("aa", RootNode0),
-%    {ok, 2} = btrie:find_prefix("aac", RootNode0),
-%    error = btrie:find_prefix("aacX", RootNode0),
+    {ok, 1} = btrie:find_prefix(<<"abcdefghijklmnopqrstuvwxyz">>, RootNode0),
+    prefix = btrie:find_prefix(<<"abcdefghijklmnopqrstuvwxy">>, RootNode0),
+    error = btrie:find_prefix(<<"abcdefghijklmnopqrstuvwxyzX">>, RootNode0),
+    prefix = btrie:find_prefix(<<"a">>, RootNode0),
+    prefix = btrie:find_prefix(<<"aa">>, RootNode0),
+    {ok, 2} = btrie:find_prefix(<<"aac">>, RootNode0),
+    error = btrie:find_prefix(<<"aacX">>, RootNode0),
     {97,97,{{{97,98,{{{98,99,{{<<"cde">>,3},{<<>>,2}}},error},
      {<<"cdefghijklmnopqrstuvwxyz">>,1}}},error}}} =
         RootNode1 = btrie:store(<<"aabcde">>, 3, RootNode0),
@@ -259,8 +260,8 @@ test() ->
         btrie:store(<<"aaaa">>, 2.5, RootNode4)),
     {ok, 2.5} = btrie:find(<<"aaaa">>, RootNode5),
     error = btrie:find(<<"aaaa">>, RootNode4),
-%    {ok, 2.5} = btrie:find_prefix("aaaa", RootNode5),
-%    prefix = btrie:find_prefix("aaaa", RootNode4),
+    {ok, 2.5} = btrie:find_prefix(<<"aaaa">>, RootNode5),
+    prefix = btrie:find_prefix(<<"aaaa">>, RootNode4),
     2.5 = btrie:fetch(<<"aaaa">>, RootNode5),
     {'EXIT', {if_clause, _}} = (catch btrie:fetch(<<"aaaa">>, RootNode4)),
     RootNode4 = btrie:erase(<<"a">>, btrie:erase(<<"aaaa">>, RootNode5)),
@@ -352,6 +353,13 @@ tuple_move_i(N1, _, N1, T1, _) ->
 tuple_move_i(I1, I0, N1, T1, T0) ->
     tuple_move_i(I1 + 1, I0 + 1, N1,
         erlang:setelement(I1, T1, erlang:element(I0, T0)), T0).
+
+check_prefix(<<>>, _) -> true;
+check_prefix(KeyEnd1, KeyEnd2) ->
+    case binary:match(KeyEnd2, KeyEnd1, []) of
+        {0, _} -> true;
+        _  -> false
+    end.
 
 %wildcard_match_lists_element(_, []) ->
 %    error;
