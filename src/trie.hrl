@@ -172,6 +172,18 @@ erase_node(H, T, {I0, I1, Data} = OldNode)
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Erase all entries within a trie that share a common prefix.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec erase_similar(Similar :: ?TYPE_NAME(),
+                    Node :: trie()) -> list(?TYPE_NAME()).
+
+erase_similar(Similar, Node) ->
+    fold_similar(Similar, fun(Key, _, N) -> erase(Key, N) end, Node, Node).
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Fetch a value from a trie.===
 %% @end
 %%-------------------------------------------------------------------------
@@ -916,6 +928,19 @@ store_node(H, ?TYPE_H1T1 = T, NewValue, {I0, I1, Data})
 to_list(Node) ->
     foldr(fun (Key, Value, L) -> [{Key, Value} | L] end, [], Node).
         
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Return a list of all entries within a trie that share a common prefix.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec to_list_similar(Similar :: ?TYPE_NAME(),
+                      Node :: trie()) -> list(?TYPE_NAME()).
+
+to_list_similar(Similar, Node) ->
+    foldr_similar(Similar,
+                  fun(Key, Value, L) -> [{Key, Value} | L] end, [], Node).
+
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Update a value in a trie.===
