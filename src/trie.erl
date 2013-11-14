@@ -1210,9 +1210,6 @@ wildcard_match_lists([C | Match], [C | L]) ->
 wildcard_match_lists(_, L) ->
     wildcard_match_lists_valid(L, false).
 
-check_prefix(KeyEnding1, KeyEnding2)->
-    lists:prefix(KeyEnding1, KeyEnding2).
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 

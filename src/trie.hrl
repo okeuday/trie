@@ -72,27 +72,29 @@
 -define(TYPE_KEYCHARNODE, Key ++ [Character] ++ Node).
 -define(TYPE_NEWKEYNODE, NewKey ++ Node).
 -define(TYPE_NEWKEY, [H | Key]).
--define(TYPE_REVERSE(X), lists:reverse(X)).
--define(TYPE_REVERSE(X,Y), lists:reverse(X,Y)).
+-define(TYPE_NEWKEY_REVERSE(X), lists:reverse(X)).
+-define(TYPE_NEWKEY_REVERSE(X, Y), lists:reverse(X, Y)).
+-define(TYPE_PREFIX(X, Y), lists:prefix(X, Y)).
 -else.
 -ifdef(MODE_BINARY).
 -define(TYPE_NAME, binary).
 -define(TYPE_EMPTY, <<>>).
 -define(TYPE_CHECK(V), is_binary(V)).
--define(TYPE_H0T0, <<H:8,T/binary>>).
--define(TYPE_H0_, <<H:8,_/binary>>).
+-define(TYPE_H0T0, <<H:8, T/binary>>).
+-define(TYPE_H0_, <<H:8, _/binary>>).
 -define(TYPE_H0, <<H:8>>).
--define(TYPE_H1T1, <<H1:8,T1/binary>>).
--define(TYPE_BHBT, <<BH:8,BT/binary>>).
--define(TYPE_KEYH0, <<Key/binary,H:8>>).
--define(TYPE_KEYH0T0, <<Key/binary,H:8,T/binary>>).
--define(TYPE_KEYH0CHILDNODE, <<Key/binary,H:8,ChildNode/binary>>).
--define(TYPE_KEYCHAR, <<Key/binary,Character:8>>).
--define(TYPE_KEYCHARNODE, <<Key/binary,Character:8,Node/binary>>).
--define(TYPE_NEWKEYNODE, <<NewKey/binary,Node/binary>>).
+-define(TYPE_H1T1, <<H1:8, T1/binary>>).
+-define(TYPE_BHBT, <<BH:8, BT/binary>>).
+-define(TYPE_KEYH0, <<Key/binary, H:8>>).
+-define(TYPE_KEYH0T0, <<Key/binary, H:8, T/binary>>).
+-define(TYPE_KEYH0CHILDNODE, <<Key/binary, H:8, ChildNode/binary>>).
+-define(TYPE_KEYCHAR, <<Key/binary, Character:8>>).
+-define(TYPE_KEYCHARNODE, <<Key/binary, Character:8, Node/binary>>).
+-define(TYPE_NEWKEYNODE, <<NewKey/binary, Node/binary>>).
 -define(TYPE_NEWKEY, <<Key/binary, H:8>>).
--define(TYPE_REVERSE(X), X).
--define(TYPE_REVERSE(X,Y), <<X/binary, Y/binary>>).
+-define(TYPE_NEWKEY_REVERSE(X), X).
+-define(TYPE_NEWKEY_REVERSE(X, Y), <<X/binary, Y/binary>>).
+-define(TYPE_PREFIX(X, Y), binary_prefix(X, Y)).
 -endif.
 -endif.
 
@@ -355,6 +357,112 @@ find_node(H, T, {I0, _, Data})
         _ ->
             error
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find a value in a trie by prefix.===
+%% The atom 'prefix' is returned if the string supplied is a prefix
+%% for a key that has previously been stored within the trie, but no
+%% value was found, since there was no exact match for the string supplied.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_prefix(?TYPE_NAME(), trie()) -> {ok, any()} | 'prefix' | 'error'.
+
+find_prefix(?TYPE_H0_, {I0, I1, _})
+  when H < I0; H > I1 ->
+    error;
+
+find_prefix(?TYPE_H0, {I0, _, Data})
+  when is_integer(H) ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _}, error} ->
+            prefix;
+        {{_, _, _}, Value} ->
+            {ok, Value};
+        {_, error} ->
+            error;
+        {?TYPE_EMPTY, Value} ->
+            {ok, Value};
+        {_, _} ->
+            prefix
+    end;
+
+find_prefix(?TYPE_H0T0, {I0, _, Data})
+  when is_integer(H) ->
+    case erlang:element(H - I0 + 1, Data) of
+        {{_, _, _} = Node, _} ->
+            find_prefix(T, Node);
+        {_, error} ->
+            error;
+        {T, Value} ->
+            {ok, Value};
+        {L, _} ->
+            case ?TYPE_PREFIX(T, L) of
+                true ->
+                    prefix;
+                false ->
+                    error
+            end
+    end;
+
+find_prefix(_, ?TYPE_EMPTY) ->
+    error.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find the longest key in a trie that is a prefix to the passed string.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_prefix_longest(Match :: ?TYPE_NAME(),
+                          Node :: trie()) ->
+    {ok, ?TYPE_NAME(), any()} | 'error'.
+
+find_prefix_longest(Match, Node) when is_tuple(Node) ->
+    find_prefix_longest(Match, ?TYPE_EMPTY, error, Node);
+
+find_prefix_longest(_Match, ?TYPE_EMPTY) ->
+    error.
+
+find_prefix_longest(?TYPE_H0T0, Key, LastMatch, {I0, I1, Data})
+  when is_integer(H), H >= I0, H =< I1 ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            %% If the prefix matched and there are other child leaf nodes
+            %% for this prefix, then update the last match to the current
+            %% prefix and continue recursing over the trie.
+            NewKey = ?TYPE_NEWKEY,
+            NewMatch = case Value of
+                error ->
+                    LastMatch;
+                _ ->
+                    {NewKey, Value}
+            end,
+            find_prefix_longest(T, NewKey, NewMatch, ChildNode);
+        true ->
+            %% If this is a leaf node and the key for the current node is a
+            %% prefix for the passed value, then return a match on the current
+            %% node. Otherwise, return the last match we had found previously.
+            case ?TYPE_PREFIX(ChildNode, T) of
+                true when Value =/= error ->
+                    {ok, ?TYPE_NEWKEY_REVERSE(?TYPE_NEWKEY, ChildNode), Value};
+                _ ->
+                    case LastMatch of
+                        {LastKey, LastValue} ->
+                            {ok, ?TYPE_NEWKEY_REVERSE(LastKey), LastValue};
+                        error ->
+                            error
+                    end
+            end
+    end;
+
+find_prefix_longest(_Match, _Key, {LastKey, LastValue}, _Node) ->
+    {ok, ?TYPE_NEWKEY_REVERSE(LastKey), LastValue};
+
+find_prefix_longest(_Match, _Key, error, _Node) ->
+    error.
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1051,104 +1159,3 @@ update_node(H, T, F, Initial, {I0, I1, Data})
 update_counter(Key, Increment, Node) ->
     update(Key, fun(I) -> I + Increment end, Increment, Node).
 
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Find a value in a trie by prefix.===
-%% The atom 'prefix' is returned if the string supplied is a prefix
-%% for a key that has previously been stored within the trie, but no
-%% value was found, since there was no exact match for the string supplied.
-%% @end
-%%-------------------------------------------------------------------------
-
--spec find_prefix(?TYPE_NAME, trie()) -> {ok, any()} | 'prefix' | 'error'.
-
-find_prefix(?TYPE_H0_, {I0, I1, _})
-  when H < I0; H > I1 ->
-    error;
-
-find_prefix(?TYPE_H0, {I0, _, Data})
-  when is_integer(H) ->
-    case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _}, error} ->
-            prefix;
-        {{_, _, _}, Value} ->
-            {ok, Value};
-        {_, error} ->
-            error;
-        {[], Value} ->
-            {ok, Value};
-        {_, _} ->
-            prefix
-    end;
-
-find_prefix(?TYPE_H0T0, {I0, _, Data})
-  when is_integer(H) ->
-    case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _} = Node, _} ->
-            find_prefix(T, Node);
-        {_, error} ->
-            error;
-        {T, Value} ->
-            {ok, Value};
-        {L, _} ->
-            case check_prefix(T, L) of
-                true ->
-                    prefix;
-                false ->
-                    error
-            end
-    end;
-
-find_prefix(_, []) ->
-    error.
-
-%%-------------------------------------------------------------------------
-%% @doc
-%% ===Find the longest key in a trie that is a prefix to the passed string.===
-%% @end
-%%-------------------------------------------------------------------------
-
--spec find_prefix_longest(Match :: ?TYPE_NAME,
-                          Node :: trie()) -> {ok, ?TYPE_NAME, any()} | 'error'.
-
-find_prefix_longest(Match, Node) when is_tuple(Node) ->
-    find_prefix_longest(Match, ?TYPE_EMPTY, error, Node);
-find_prefix_longest(_Match, _Node) ->
-    error.
-
-find_prefix_longest(?TYPE_H0T0, Key, LastMatch, {I0, I1, Data})
-  when is_integer(H), H >= I0, H =< I1 ->
-    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
-    if
-        is_tuple(ChildNode) ->
-            %% If the prefix matched and there are other child leaf nodes
-            %% for this prefix, then update the last match to the current
-            %% prefix and continue recursing over the trie.
-            NewKey = ?TYPE_NEWKEY,
-            NewMatch = case Value of
-                           error -> LastMatch;
-                           _     -> {NewKey, Value}
-                       end,
-            find_prefix_longest(T, NewKey, NewMatch, ChildNode);
-        true ->
-            %% If this is a leaf node and the key for the current node is a
-            %% prefix for the passed value, then return a match on the current
-            %% node. Otherwise, return the last match we had found previously.
-            case check_prefix(ChildNode, T) of
-                true when Value =/= error ->
-                    {ok, ?TYPE_REVERSE(?TYPE_NEWKEY, ChildNode), Value};
-                _ ->
-                    case LastMatch of
-                        {LastKey, LastValue} ->
-                            {ok, ?TYPE_REVERSE(LastKey), LastValue};
-                        error ->
-                            error
-                    end
-            end
-    end;
-
-find_prefix_longest(_Match, _Key, {LastKey, LastValue}, _Node) ->
-    {ok, ?TYPE_REVERSE(LastKey), LastValue};
-
-find_prefix_longest(_Match, _Key, error, _Node) ->
-    error.

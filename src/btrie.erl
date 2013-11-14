@@ -363,11 +363,14 @@ tuple_move_i(I1, I0, N1, T1, T0) ->
     tuple_move_i(I1 + 1, I0 + 1, N1,
         erlang:setelement(I1, T1, erlang:element(I0, T0)), T0).
 
-check_prefix(<<>>, _) -> true;
-check_prefix(KeyEnd1, KeyEnd2) ->
+binary_prefix(<<>>, _) ->
+    true;
+binary_prefix(KeyEnd1, KeyEnd2) ->
     case binary:match(KeyEnd2, KeyEnd1, []) of
-        {0, _} -> true;
-        _  -> false
+        {0, _} ->
+            true;
+        _  ->
+            false
     end.
 
 %wildcard_match_lists_element(_, []) ->
