@@ -2,18 +2,10 @@
 % ex: set ft=erlang fenc=utf-8 sts=4 ts=4 sw=4 et:
 %%%
 %%%------------------------------------------------------------------------
-%%% @doc
-%%% ==A trie data structure implementation.==
-%%% The trie (i.e., from "retrieval") data structure was invented by
-%%% Edward Fredkin (it is a form of radix sort).  The implementation stores
-%%% string suffixes as a list because it is a PATRICIA trie
-%%% (PATRICIA - Practical Algorithm to Retrieve Information
-%%%  Coded in Alphanumeric, D.R.Morrison (1968)).
 %%%
 %%% This file contains trie functions utilized by both the string
 %%% (list of integers) trie implementation and the binary trie
 %%% implementation.
-%%% @end
 %%%
 %%% BSD LICENSE
 %%% 
@@ -51,9 +43,6 @@
 %%% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 %%% DAMAGE.
 %%%
-%%% @author Michael Truog <mjtruog [at] gmail (dot) com>
-%%% @copyright 2010-2013 Michael Truog
-%%% @version 1.3.0 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -ifdef(MODE_LIST).
