@@ -2,18 +2,10 @@
 % ex: set ft=erlang fenc=utf-8 sts=4 ts=4 sw=4 et:
 %%%
 %%%------------------------------------------------------------------------
-%%% @doc
-%%% ==A trie data structure implementation.==
-%%% The trie (i.e., from "retrieval") data structure was invented by
-%%% Edward Fredkin (it is a form of radix sort).  The implementation stores
-%%% string suffixes as a list because it is a PATRICIA trie
-%%% (PATRICIA - Practical Algorithm to Retrieve Information
-%%%  Coded in Alphanumeric, D.R.Morrison (1968)).
 %%%
 %%% This file contains trie functions utilized by both the string
 %%% (list of integers) trie implementation and the binary trie
 %%% implementation.
-%%% @end
 %%%
 %%% BSD LICENSE
 %%% 
@@ -51,9 +43,6 @@
 %%% OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 %%% DAMAGE.
 %%%
-%%% @author Michael Truog <mjtruog [at] gmail (dot) com>
-%%% @copyright 2010-2013 Michael Truog
-%%% @version 1.3.0 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -ifdef(MODE_LIST).
@@ -179,6 +168,18 @@ erase_node(H, T, {I0, I1, Data} = OldNode)
             {I0, I1, erlang:setelement(I, Data,
                 {erase_node(H1, T1, Node), Value})}
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Erase all entries within a trie that share a common prefix.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec erase_similar(Similar :: ?TYPE_NAME(),
+                    Node :: trie()) -> list(?TYPE_NAME()).
+
+erase_similar(Similar, Node) ->
+    fold_similar(Similar, fun(Key, _, N) -> erase(Key, N) end, Node, Node).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1032,6 +1033,19 @@ store_node(H, ?TYPE_H1T1 = T, NewValue, {I0, I1, Data})
 to_list(Node) ->
     foldr(fun (Key, Value, L) -> [{Key, Value} | L] end, [], Node).
         
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Return a list of all entries within a trie that share a common prefix.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec to_list_similar(Similar :: ?TYPE_NAME(),
+                      Node :: trie()) -> list(?TYPE_NAME()).
+
+to_list_similar(Similar, Node) ->
+    foldr_similar(Similar,
+                  fun(Key, Value, L) -> [{Key, Value} | L] end, [], Node).
+
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Update a value in a trie.===
