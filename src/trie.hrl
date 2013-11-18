@@ -1006,7 +1006,7 @@ store_node(H, ?TYPE_H1T1 = T, NewValue, {I0, I1, Data})
             {I0, I1, erlang:setelement(I, Data,
                 {store_node(H1, T1, NewValue, Node), Value})};
         T ->
-            {I0, I1, erlang:setelement(I, Data, {Node, Value})};
+            {I0, I1, erlang:setelement(I, Data, {Node, NewValue})};
         ?TYPE_EMPTY ->
             if
                 Value =:= error ->

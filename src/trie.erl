@@ -1144,6 +1144,8 @@ test() ->
     ["1"] = trie:fetch_keys_similar("1", RootNode8),
     ["0"] = trie:fetch_keys_similar("0", RootNode8),
     ["00"] = trie:fetch_keys_similar("0", RootNode7),
+    RootNode9 = trie:new([{"abc", 123}]),
+    {97,97,{{"bc",456}}} = trie:store("abc", 456, RootNode9),
     ok.
 
 %%%------------------------------------------------------------------------
