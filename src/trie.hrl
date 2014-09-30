@@ -1040,7 +1040,7 @@ to_list(Node) ->
 %%-------------------------------------------------------------------------
 
 -spec to_list_similar(Similar :: ?TYPE_NAME(),
-                      Node :: trie()) -> list(?TYPE_NAME()).
+                      Node :: trie()) -> list({?TYPE_NAME(), any()}).
 
 to_list_similar(Similar, Node) ->
     foldr_similar(Similar,
