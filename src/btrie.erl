@@ -69,6 +69,7 @@
          fetch_keys/1,
          fetch_keys_similar/2,
          find_prefix/2,
+         find_prefix_all/2,
          find_prefix_longest/2,
          filter/2,
          find/2,
