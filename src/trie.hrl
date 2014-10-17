@@ -472,17 +472,17 @@ find_prefix_longest(_Match, _Key, error, _Node) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec find_prefix_all(Match :: ?TYPE_NAME(),
+-spec find_prefixes(Match :: ?TYPE_NAME(),
                       Node :: trie()) ->
     list({?TYPE_NAME(), any()}).
 
-find_prefix_all(Match, Node) when is_tuple(Node) ->
-    find_prefix_all(Match, ?TYPE_EMPTY, [], Node);
+find_prefixes(Match, Node) when is_tuple(Node) ->
+    find_prefixes(Match, ?TYPE_EMPTY, [], Node);
 
-find_prefix_all(_Match, ?TYPE_EMPTY) ->
+find_prefixes(_Match, ?TYPE_EMPTY) ->
     [].
 
-find_prefix_all(?TYPE_H0T0, Key, Acc, {I0, I1, Data})
+find_prefixes(?TYPE_H0T0, Key, Acc, {I0, I1, Data})
     when is_integer(H), H >= I0, H =< I1 ->
     {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
     if
@@ -497,7 +497,7 @@ find_prefix_all(?TYPE_H0T0, Key, Acc, {I0, I1, Data})
                 true ->
                     [{?TYPE_NEWKEY_REVERSE(NewKey), Value} | Acc]
             end,
-            find_prefix_all(T, NewKey, NewAcc, ChildNode);
+            find_prefixes(T, NewKey, NewAcc, ChildNode);
         true ->
             %% If this is a leaf node and the key for the current node is a
             %% prefix for the passed value, then add a match on the current
@@ -512,7 +512,7 @@ find_prefix_all(?TYPE_H0T0, Key, Acc, {I0, I1, Data})
             lists:reverse(NewAcc)
     end;
 
-find_prefix_all(_Match, _Key, Acc, _Node) ->
+find_prefixes(_Match, _Key, Acc, _Node) ->
     lists:reverse(Acc).
 
 %%-------------------------------------------------------------------------
