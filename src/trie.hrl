@@ -467,6 +467,51 @@ find_prefix_longest(_Match, _Key, error, _Node) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Find the all keys in a trie that is are prefix to the passed string.===
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_prefix_all(Match :: ?TYPE_NAME(),
+                      Node :: trie()) ->
+    {ok, ?TYPE_NAME(), any()} | 'error'.
+
+find_prefix_all(Match, Node) when is_tuple(Node) ->
+    find_prefix_all(Match, ?TYPE_EMPTY, [], Node);
+
+find_prefix_all(_Match, ?TYPE_EMPTY) ->
+    [].
+
+find_prefix_all(?TYPE_H0T0, Key, Acc, {I0, I1, Data})
+  when is_integer(H), H >= I0, H =< I1 ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            %% If the prefix matched and there are other child leaf nodes
+            %% for this prefix, then add the match to the current list
+            %% and continue recursing over the trie.
+            NewKey = ?TYPE_NEWKEY,
+            NewAcc = case Value of
+                error -> Acc;
+                _     -> [{?TYPE_NEWKEY_REVERSE(NewKey), Value}|Acc]
+            end,
+            find_prefix_all(T, NewKey, NewAcc, ChildNode);
+        true ->
+            %% If this is a leaf node and the key for the current node is a
+            %% prefix for the passed value, then add a match on the current
+            %% node. Otherwise, return the last match we had found previously.
+            case ?TYPE_PREFIX(ChildNode, T) of
+                true when Value =/= error ->
+                    [{?TYPE_NEWKEY_REVERSE(?TYPE_NEWKEY, ChildNode), Value}|Acc];
+                _ ->
+                    Acc
+            end
+    end;
+
+find_prefix_all(_Match, _Key, Acc, _Node) ->
+    Acc.
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Fold a function over the trie.===
 %% Traverses in alphabetical order.
 %% @end
