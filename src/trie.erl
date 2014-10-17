@@ -1064,14 +1064,16 @@ test() ->
     [] = trie:find_prefix_all("z", RootNode4),
     [{"aa", 1}] = trie:find_prefix_all("aa", RootNode4),
     [{"aa", 1},
-     {"aaa",2}] = lists:sort(trie:find_prefix_all("aaaa", RootNode4)),
+     {"aaa",2}] = trie:find_prefix_all("aaaa", RootNode4),
     [{"ab",5}] = trie:find_prefix_all("absolut", RootNode4),
-    [{"ab",5}, {"aba", 6}] = lists:sort(trie:find_prefix_all("aba", RootNode4)),
+    [{"ab",5},
+     {"aba", 6}] = trie:find_prefix_all("aba", RootNode4),
     [] = trie:find_prefix_all("bar", RootNode4),
     [{"aa",1},
      {"aaa",2},
      {"aaaaaaaa",3},
-     {"aaaaaaaaaaa",4}] = lists:sort(trie:find_prefix_all("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4)),
+     {"aaaaaaaaaaa",4}
+     ] = trie:find_prefix_all("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
     error = trie:find_prefix_longest("a", RootNode4),
     {ok, "aa", 1} = trie:find_prefix_longest("aa", RootNode4),
     {ok, "aaa", 2} = trie:find_prefix_longest("aaaa", RootNode4),
@@ -1079,9 +1081,9 @@ test() ->
     {ok, "aba", 6} = trie:find_prefix_longest("aba", RootNode4),
     {ok, "aaaaaaaa", 3} = trie:find_prefix_longest("aaaaaaaaa", RootNode4),
     error = trie:find_prefix_longest("bar", RootNode4),
-    {ok, "aaaaaaaaaaa", 4} = trie:find_prefix_longest("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
-
-
+    {ok,
+     "aaaaaaaaaaa",
+     4} = trie:find_prefix_longest("aaaaaaaaaaaaaaaaaaaaaddddddaa", RootNode4),
     2.5 = trie:fetch("aaaa", RootNode5),
     {'EXIT', {if_clause, _}} = (catch trie:fetch("aaaa", RootNode4)),
     RootNode4 = trie:erase("a", trie:erase("aaaa", RootNode5)),
@@ -1127,7 +1129,9 @@ test() ->
     ["aba",
      "aaa"
      ] = trie:fold_match("a*a", fun(K, _, L) -> [K | L] end, [], RootNode4),
-    {'EXIT',badarg} = (catch trie:fold_match("a**a", fun(K, _, L) -> [K | L] end, [], RootNode4)),
+    {'EXIT', badarg} = (catch trie:fold_match("a**a",
+                                              fun(K, _, L) -> [K | L] end,
+                                              [], RootNode4)),
     RootNode6 = trie:new([
         {"*",      1},
         {"aa*",    2},
