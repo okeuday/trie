@@ -651,15 +651,13 @@ is_prefixed_match([H | _], _, _, {I0, I1, _})
 is_prefixed_match([H], Matched, Exclude, {I0, _, Data})
     when is_integer(H) ->
     case erlang:element(H - I0 + 1, Data) of
-        {{_, _, _}, error} ->
+        {_, error} ->
             false;
         {{_, _, _}, _} ->
             Matched orelse (not lists:member(H, Exclude));
-        {_, error} ->
-            false;
         {[], _} ->
             Matched orelse (not lists:member(H, Exclude));
-        _ ->
+        {[_ | _], _} ->
             false
     end;
 
@@ -679,7 +677,7 @@ is_prefixed_match([H | T], Matched, Exclude, {I0, _, Data})
         {_, error} ->
             false;
         {L, _} ->
-            is_prefixed_match_check(T, L,
+            is_prefixed_match_check(L, T,
                                     Matched orelse
                                     (not lists:member(H, Exclude)),
                                     Exclude)
@@ -688,7 +686,7 @@ is_prefixed_match([H | T], Matched, Exclude, {I0, _, Data})
 is_prefixed_match(_, _, _, []) ->
     false.
 
-is_prefixed_match_check([], [], Matched, _) ->
+is_prefixed_match_check([], _, Matched, _) ->
     Matched;
 
 is_prefixed_match_check([H | T1], [H | T2], Matched, Exclude) ->
@@ -1260,6 +1258,13 @@ test() ->
     true = trie:is_prefix("a", RootNode11),
     true = trie:is_prefix("ab", RootNode10),
     true = trie:is_prefix("ab", RootNode11),
+    true = trie:is_prefixed("abcdefghijk", "", RootNode10),
+    true = trie:is_prefixed("abcdefghijk", "", RootNode11),
+    false = trie:is_prefixed("abcdefghijk", "abc", RootNode10),
+    true = trie:is_prefixed("abcdefghijk", "abc", RootNode11),
+    true = trie:is_prefixed("abcdefghijk", "ac", RootNode10),
+    true = trie:is_prefixed("abcdefghijk", "bc", RootNode10),
+    true = trie:is_prefixed("abcdefghijk", "ab", RootNode10),
     ok.
 
 %%%------------------------------------------------------------------------
