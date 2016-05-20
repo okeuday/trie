@@ -566,10 +566,10 @@ is_prefix([H], {I0, _, Data})
     case erlang:element(H - I0 + 1, Data) of
         {{_, _, _}, _} ->
             true;
-        {[], Value} ->
-            (Value =/= error);
-        _ ->
-            false
+        {_, error} ->
+            false;
+        {_, _} ->
+            true
     end;
 
 is_prefix([H | T], {I0, _, Data})
@@ -609,7 +609,7 @@ is_prefixed([H], {I0, _, Data})
             true;
         {[], _} ->
             true;
-        _ ->
+        {[_ | _], _} ->
             false
     end;
 
@@ -624,8 +624,8 @@ is_prefixed([H | T], {I0, _, Data})
             false;
         {T, _} ->
             true;
-        _ ->
-            false
+        {L, _} ->
+            lists:prefix(L, T)
     end;
 
 is_prefixed(_, []) ->
@@ -1252,6 +1252,14 @@ test() ->
     ["00"] = trie:fetch_keys_similar("0", RootNode7),
     RootNode9 = trie:new([{"abc", 123}]),
     {97,97,{{"bc",456}}} = trie:store("abc", 456, RootNode9),
+    RootNode10 = trie:store("abc", value, trie:new()),
+    RootNode11 = trie:store("abcd", value, RootNode10),
+    true = trie:is_prefixed("abcdefghijk", RootNode10),
+    true = trie:is_prefixed("abcdefghijk", RootNode11),
+    true = trie:is_prefix("a", RootNode10),
+    true = trie:is_prefix("a", RootNode11),
+    true = trie:is_prefix("ab", RootNode10),
+    true = trie:is_prefix("ab", RootNode11),
     ok.
 
 %%%------------------------------------------------------------------------
