@@ -3,7 +3,7 @@ defmodule Trie.Mixfile do
 
   def project do
     [app: :trie,
-     version: "1.5.2",
+     version: "1.5.3",
      language: :erlang,
      description: description,
      package: package,
