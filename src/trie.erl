@@ -910,7 +910,7 @@ pattern_parse([$*, $* | _], [_ | _], _, _, _) ->
 
 pattern_parse([$*, C | Pattern], [H | T], Parsed, Suffix, Option) ->
     if
-        Option =:= expanded ->
+        Option =:= expanded, Suffix /= [] ->
             pattern_parse_pattern(Pattern, C, T, [H],
                                   [{exact, lists:reverse(Suffix)} | Parsed],
                                   Option);
