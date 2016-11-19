@@ -56,7 +56,7 @@
 %%%
 %%% @author Michael Truog <mjtruog [at] gmail (dot) com>
 %%% @copyright 2010-2016 Michael Truog
-%%% @version 1.5.2 {@date} {@time}
+%%% @version 1.5.5 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -module(trie).
@@ -839,19 +839,31 @@ pattern_parse(Pattern, L) ->
 
 -spec pattern_parse(Pattern :: string(),
                     L :: string(),
-                    Option :: default | with_suffix) ->
-    list(string()) | {list(string()), string()} | 'error'.
+                    Option :: default | with_suffix | expanded) ->
+    list(string()) |                       % default
+    {list(string()), string()} |           % with_suffix
+    list(string() | {exact, string()}) |   % expanded
+    'error'.
 
 pattern_parse(Pattern, L, Option)
     when (Option =:= default) orelse
-         (Option =:= with_suffix) ->
+         (Option =:= with_suffix) orelse
+         (Option =:= expanded) ->
     pattern_parse(Pattern, L, [], [], Option).
 
 pattern_parse_result(default, Parameters, _) ->
     Parameters;
 
 pattern_parse_result(with_suffix, Parameters, Suffix) ->
-    {Parameters, lists:reverse(Suffix)}.
+    {Parameters, lists:reverse(Suffix)};
+
+pattern_parse_result(expanded, Parameters, Suffix) ->
+    if
+        Suffix == [] ->
+            Parameters;
+        true ->
+            Parameters ++ [{exact, lists:reverse(Suffix)}]
+    end.
 
 pattern_parse_element(_, [], _) ->
     error;
@@ -896,8 +908,15 @@ pattern_parse([$*], [_ | _] = L, Parsed, _, Option) ->
 pattern_parse([$*, $* | _], [_ | _], _, _, _) ->
     erlang:exit(badarg);
 
-pattern_parse([$*, C | Pattern], [H | T], Parsed, _, Option) ->
-    pattern_parse_pattern(Pattern, C, T, [H], Parsed, Option);
+pattern_parse([$*, C | Pattern], [H | T], Parsed, Suffix, Option) ->
+    if
+        Option =:= expanded ->
+            pattern_parse_pattern(Pattern, C, T, [H],
+                                  [{exact, lists:reverse(Suffix)} | Parsed],
+                                  Option);
+        true ->
+            pattern_parse_pattern(Pattern, C, T, [H], Parsed, Option)
+    end;
 
 pattern_parse([C | Pattern], [C | L], Parsed, Suffix, Option) ->
     pattern_parse(Pattern, L, Parsed, [C | Suffix], Option);
@@ -1236,6 +1255,11 @@ test() ->
     {ok,"*/",empty} = trie:find_match("///", trie:new(["*/"])),
     [] = trie:pattern_parse("aaabb", "aaabb"),
     {[], "aaabb"} = trie:pattern_parse("aaabb", "aaabb", with_suffix),
+    [{exact, "a"},
+     "ddi",
+     {exact, "t"},
+     "io",
+     {exact, "n"}] = trie:pattern_parse("a*t*n", "addition", expanded),
     false = trie:is_pattern("abcdef"),
     true = trie:is_pattern("abc*d*ef"),
     {'EXIT',badarg} = (catch trie:is_pattern("abc**ef")),
