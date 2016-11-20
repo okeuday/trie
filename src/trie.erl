@@ -852,18 +852,19 @@ pattern_parse(Pattern, L, Option)
     pattern_parse(Pattern, L, [], [], Option).
 
 pattern_parse_result(default, Parameters, _) ->
-    Parameters;
+    lists:reverse(Parameters);
 
 pattern_parse_result(with_suffix, Parameters, Suffix) ->
-    {Parameters, lists:reverse(Suffix)};
+    {lists:reverse(Parameters), lists:reverse(Suffix)};
 
 pattern_parse_result(expanded, Parameters, Suffix) ->
-    if
-        Suffix == [] ->
-            Parameters;
+    NewParameters = if
+        Suffix /= [] ->
+            [{exact, lists:reverse(Suffix)} | Parameters];
         true ->
-            Parameters ++ [{exact, lists:reverse(Suffix)}]
-    end.
+            Parameters
+    end,
+    lists:reverse(NewParameters).
 
 pattern_parse_element(_, [], _) ->
     error;
@@ -894,7 +895,7 @@ pattern_parse_pattern(Pattern, C, L, Segment, Parsed, Option) ->
     end.
 
 pattern_parse([], [], Parsed, Suffix, Option) ->
-    pattern_parse_result(Option, lists:reverse(Parsed), Suffix);
+    pattern_parse_result(Option, Parsed, Suffix);
 
 pattern_parse([], [_ | _], _, _, _) ->
     error;
@@ -909,20 +910,19 @@ pattern_parse([$*], [_ | _] = L, Parsed, Suffix, Option) ->
         true ->
             Parsed
     end,
-    pattern_parse_result(Option, lists:reverse([L | NewParsed]), []);
+    pattern_parse_result(Option, [L | NewParsed], []);
 
 pattern_parse([$*, $* | _], [_ | _], _, _, _) ->
     erlang:exit(badarg);
 
 pattern_parse([$*, C | Pattern], [H | T], Parsed, Suffix, Option) ->
-    if
+    NewParsed = if
         Option =:= expanded, Suffix /= [] ->
-            pattern_parse_pattern(Pattern, C, T, [H],
-                                  [{exact, lists:reverse(Suffix)} | Parsed],
-                                  Option);
+            [{exact, lists:reverse(Suffix)} | Parsed];
         true ->
-            pattern_parse_pattern(Pattern, C, T, [H], Parsed, Option)
-    end;
+            Parsed
+    end,
+    pattern_parse_pattern(Pattern, C, T, [H], NewParsed, Option);
 
 pattern_parse([C | Pattern], [C | L], Parsed, Suffix, Option) ->
     pattern_parse(Pattern, L, Parsed, [C | Suffix], Option);
