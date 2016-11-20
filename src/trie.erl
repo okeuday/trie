@@ -902,8 +902,14 @@ pattern_parse([], [_ | _], _, _, _) ->
 pattern_parse([_ | _], [$* | _], _, _, _) ->
     erlang:exit(badarg);
 
-pattern_parse([$*], [_ | _] = L, Parsed, _, Option) ->
-    pattern_parse_result(Option, lists:reverse([L | Parsed]), []);
+pattern_parse([$*], [_ | _] = L, Parsed, Suffix, Option) ->
+    NewParsed = if
+        Option =:= expanded, Suffix /= [] ->
+            [{exact, lists:reverse(Suffix)} | Parsed];
+        true ->
+            Parsed
+    end,
+    pattern_parse_result(Option, lists:reverse([L | NewParsed]), []);
 
 pattern_parse([$*, $* | _], [_ | _], _, _, _) ->
     erlang:exit(badarg);
@@ -1260,6 +1266,8 @@ test() ->
      {exact, "t"},
      "io",
      {exact, "n"}] = trie:pattern_parse("a*t*n", "addition", expanded),
+    ["w",{exact,"atch"}] = trie:pattern_parse("*atch", "watch", expanded),
+    [{exact,"is"},"t"] = trie:pattern_parse("is*", "ist", expanded),
     false = trie:is_pattern("abcdef"),
     true = trie:is_pattern("abc*d*ef"),
     {'EXIT',badarg} = (catch trie:is_pattern("abc**ef")),
