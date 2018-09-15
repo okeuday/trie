@@ -6,7 +6,7 @@ defmodule Trie.Mixfile do
 
   def project do
     [app: :trie,
-     version: "1.7.4-rc1",
+     version: "1.7.4",
      language: :erlang,
      erlc_options: [
        :debug_info,
