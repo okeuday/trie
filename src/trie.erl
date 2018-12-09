@@ -20,7 +20,7 @@
 %%%
 %%% MIT License
 %%%
-%%% Copyright (c) 2010-2017 Michael Truog <mjtruog at protonmail dot com>
+%%% Copyright (c) 2010-2018 Michael Truog <mjtruog at protonmail dot com>
 %%%
 %%% Permission is hereby granted, free of charge, to any person obtaining a
 %%% copy of this software and associated documentation files (the "Software"),
@@ -41,8 +41,8 @@
 %%% DEALINGS IN THE SOFTWARE.
 %%%
 %%% @author Michael Truog <mjtruog at protonmail dot com>
-%%% @copyright 2010-2017 Michael Truog
-%%% @version 1.7.1 {@date} {@time}
+%%% @copyright 2010-2018 Michael Truog
+%%% @version 1.7.5 {@date} {@time}
 %%%------------------------------------------------------------------------
 
 -module(trie).
@@ -59,6 +59,7 @@
          filter/2,
          find/2,
          find_match/2,
+         find_match2/2,
          find_prefix/2,
          find_prefixes/2,
          find_prefix_longest/2,
@@ -112,9 +113,9 @@
 %% a regex of ".+".  "**" within the trie will result in undefined behavior
 %% (the pattern is malformed).  The function will search for the most specific
 %% match possible, given the input string and the trie contents.  The input
-%% string must not contain wildcard characters, otherwise badarg is thrown.
-%% If you instead want to supply a pattern string to match the contents of
-%% the trie, see fold_match/4.
+%% string must not contain wildcard characters, otherwise a badarg exit
+%% exception will occur.  If you instead want to supply a pattern string to
+%% match the contents of the trie, see fold_match/4.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -125,6 +126,9 @@ find_match(_, []) ->
 
 find_match(Match, Node) ->
     find_match_node(Match, [], Node).
+
+find_match_node([], _, _) ->
+    error;
 
 find_match_node([$* | _], _, _) ->
     erlang:exit(badarg);
@@ -168,17 +172,17 @@ find_match_node([H | T] = Match, Key, {I0, I1, Data} = Node)
     end,
     if
         Result =:= error ->
-            find_match_element_1(Match, Key, Node);
+            find_match_pattern_1(Match, Key, Node);
         true ->
             Result
     end.
 
-find_match_element_1([_ | T] = Match, Key, {I0, I1, Data})
+find_match_pattern_1([_ | T] = Match, Key, {I0, I1, Data})
     when $* >= I0, $* =< I1 ->
     {ChildNode, Value} = erlang:element($* - I0 + 1, Data),
     if
         is_tuple(ChildNode) ->
-            find_match_element_N(T, [$* | Key], Value, ChildNode);
+            find_match_pattern_N(T, [$* | Key], Value, ChildNode);
         Value =:= error ->
             error;
         true ->
@@ -191,40 +195,237 @@ find_match_element_1([_ | T] = Match, Key, {I0, I1, Data})
             end
     end;
 
-find_match_element_1(_, _, _) ->
+find_match_pattern_1(_, _, _) ->
     error.
 
-find_match_element_N([], _, error, _) ->
+find_match_pattern_N([], _, error, _) ->
     error;
 
-find_match_element_N([], Key, WildValue, _) ->
+find_match_pattern_N([], Key, WildValue, _) ->
     {ok, lists:reverse(Key), WildValue};
 
-find_match_element_N([$* | _], _, _, _) ->
+find_match_pattern_N([$* | _], _, _, _) ->
     erlang:exit(badarg);
 
-find_match_element_N([H | T], Key, WildValue, {I0, I1, _} = Node)
+find_match_pattern_N([H | T], Key, WildValue, {I0, I1, _} = Node)
     when H < I0; H > I1 ->
-    find_match_element_N(T, Key, WildValue, Node);
+    find_match_pattern_N(T, Key, WildValue, Node);
 
-find_match_element_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
+find_match_pattern_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
     {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
     if
         is_tuple(ChildNode) ->
             case find_match_node(T, [H | Key], ChildNode) of
                 error ->
-                    find_match_element_N(T, Key, WildValue, Node);
+                    find_match_pattern_N(T, Key, WildValue, Node);
                 Result ->
                     Result
             end;
         Value =:= error ->
-            find_match_element_N(T, Key, WildValue, Node);
+            find_match_pattern_N(T, Key, WildValue, Node);
         true ->
             case wildcard_match_lists(ChildNode, T) of
                 true ->
                     {ok, lists:reverse([H | Key], ChildNode), Value};
                 false ->
-                    find_match_element_N(T, Key, WildValue, Node)
+                    find_match_pattern_N(T, Key, WildValue, Node)
+            end
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Find a match with patterns (using 2 wildcard characters) held within a trie.===
+%% All patterns held within the trie use the wildcard character "*" or "?"
+%% to represent a regex of ".+".  "**" or "??" within the trie will result
+%% in undefined behavior (the pattern is malformed).  The function will
+%% search for the most specific match possible, given the input string and
+%% the trie contents.  The input string must not contain wildcard characters,
+%% otherwise a badarg exit exception will occur.  The "?" wildcard character
+%% consumes the shortest match to the next character and must not be the
+%% the last character in the string (the pattern would be malformed).
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec find_match2(string(), trie()) -> {ok, any(), any()} | 'error'.
+
+find_match2(_, []) ->
+    error;
+
+find_match2(Match, Node) ->
+    find_match2_node(Match, [], Node).
+
+find_match2_node([], _, _) ->
+    error;
+
+find_match2_node([H | _], _, _)
+    when H == $*; H == $? ->
+    erlang:exit(badarg);
+
+find_match2_node([H | T] = Match, Key, {I0, I1, Data} = Node)
+    when is_integer(H) ->
+    Result = if
+        H < I0; H > I1 ->
+            error;
+        true ->
+            {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+            if
+                T =:= [] ->
+                    if
+                        is_tuple(ChildNode); ChildNode =:= [] ->
+                            if
+                                Value =:= error ->
+                                    error;
+                                true ->
+                                    {ok, lists:reverse([H | Key]), Value}
+                            end;
+                        true ->
+                            error
+                    end;
+                true ->
+                    if
+                        is_tuple(ChildNode) ->
+                            find_match2_node(T, [H | Key], ChildNode);
+                        Value =:= error ->
+                            error;
+                        true ->
+                            case wildcard_match2_lists(ChildNode, T) of
+                                true ->
+                                    {ok, lists:reverse([H | Key],
+                                                       ChildNode), Value};
+                                false ->
+                                    error
+                            end
+                    end
+            end
+    end,
+    if
+        Result =:= error ->
+            ResultPattern0 = find_match2_pattern0_0(Match, Key, Node),
+            if
+                ResultPattern0 =:= error ->
+                    find_match2_pattern1_1(Match, Key, Node);
+                true ->
+                    ResultPattern0
+            end;
+        true ->
+            Result
+    end.
+
+find_match2_pattern0_0([_ | _] = Match, Key, {I0, I1, Data})
+    when $? >= I0, $? =< I1 ->
+    {ChildNode, Value} = erlang:element($? - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            find_match2_pattern0_1(Match, [$? | Key], ChildNode);
+        Value =:= error; ChildNode =:= [] ->
+            error;
+        true ->
+            Suffix = [$? | ChildNode],
+            case wildcard_match2_lists(Suffix, Match) of
+                true ->
+                    {ok, lists:reverse(Key, Suffix), Value};
+                false ->
+                    error
+            end
+    end;
+
+find_match2_pattern0_0(_, _, _) ->
+    error.
+
+find_match2_pattern0_1([H | T], Key, {I0, I1, _} = Node)
+    when H < I0; H > I1 ->
+    find_match2_pattern0_N(T, undefined, Key, Node);
+
+find_match2_pattern0_1([H | T], Key, {I0, _, Data} = Node) ->
+    {_, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        Value =:= error ->
+            find_match2_pattern0_N(T, undefined, Key, Node);
+        true ->
+            find_match2_pattern0_N(T, H, Key, Node)
+    end.
+
+find_match2_pattern0_N([], _, _, _) ->
+    error;
+
+find_match2_pattern0_N([$? | _], _, _, _) ->
+    erlang:exit(badarg);
+
+find_match2_pattern0_N([H | T], H, Key, Node) ->
+    find_match2_pattern0_N(T, H, Key, Node);
+
+find_match2_pattern0_N([H | T], Ignore, Key, {I0, I1, _} = Node)
+    when H < I0; H > I1 ->
+    find_match2_pattern0_N(T, Ignore, Key, Node);
+
+find_match2_pattern0_N([H | T], Ignore, Key, {I0, _, Data} = Node) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            find_match2_node(T, [H | Key], ChildNode);
+        Value =:= error ->
+            find_match2_pattern0_N(T, Ignore, Key, Node);
+        true ->
+            case wildcard_match2_lists(ChildNode, T) of
+                true ->
+                    {ok, lists:reverse([H | Key], ChildNode), Value};
+                false ->
+                    find_match2_pattern0_N(T, Ignore, Key, Node)
+            end
+    end.
+
+find_match2_pattern1_1([_ | T] = Match, Key, {I0, I1, Data})
+    when $* >= I0, $* =< I1 ->
+    {ChildNode, Value} = erlang:element($* - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            find_match2_pattern1_N(T, [$* | Key], Value, ChildNode);
+        Value =:= error ->
+            error;
+        true ->
+            Suffix = [$* | ChildNode],
+            case wildcard_match2_lists(Suffix, Match) of
+                true ->
+                    {ok, lists:reverse(Key, Suffix), Value};
+                false ->
+                    error
+            end
+    end;
+
+find_match2_pattern1_1(_, _, _) ->
+    error.
+
+find_match2_pattern1_N([], _, error, _) ->
+    error;
+
+find_match2_pattern1_N([], Key, WildValue, _) ->
+    {ok, lists:reverse(Key), WildValue};
+
+find_match2_pattern1_N([$* | _], _, _, _) ->
+    erlang:exit(badarg);
+
+find_match2_pattern1_N([H | T], Key, WildValue, {I0, I1, _} = Node)
+    when H < I0; H > I1 ->
+    find_match2_pattern1_N(T, Key, WildValue, Node);
+
+find_match2_pattern1_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
+    {ChildNode, Value} = erlang:element(H - I0 + 1, Data),
+    if
+        is_tuple(ChildNode) ->
+            case find_match2_node(T, [H | Key], ChildNode) of
+                error ->
+                    find_match2_pattern1_N(T, Key, WildValue, Node);
+                Result ->
+                    Result
+            end;
+        Value =:= error ->
+            find_match2_pattern1_N(T, Key, WildValue, Node);
+        true ->
+            case wildcard_match2_lists(ChildNode, T) of
+                true ->
+                    {ok, lists:reverse([H | Key], ChildNode), Value};
+                false ->
+                    find_match2_pattern1_N(T, Key, WildValue, Node)
             end
     end.
 
@@ -298,9 +499,10 @@ find_similar_element(Key, Node) ->
 %% ===Fold a function over the keys within a trie that matches a pattern.===
 %% Traverses in alphabetical order.  Uses "*" as a wildcard character
 %% within the pattern (it acts like a ".+" regex, and "**" is forbidden).
-%% The trie keys must not contain wildcard characters, otherwise badarg
-%% is thrown. If you want to match a specific string without wildcards
-%% on trie values that contain wildcard characters, see find_match/2.
+%% The trie keys must not contain wildcard characters, otherwise a badarg
+%% exit exception will occur. If you want to match a specific string
+%% without wildcards on trie values that contain wildcard characters,
+%% see find_match/2.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -1286,6 +1488,47 @@ test() ->
     true = trie:is_prefixed("abcdefghijk", "ac", RootNode10),
     true = trie:is_prefixed("abcdefghijk", "bc", RootNode10),
     true = trie:is_prefixed("abcdefghijk", "ab", RootNode10),
+    {ok,"aa*",2} = trie:find_match2("aaaa", RootNode6),
+    {ok,"aaaaa",5} = trie:find_match2("aaaaa", RootNode6),
+    {ok,"*",1} = trie:find_match2("aa", RootNode6),
+    {ok,"aa*",2} = trie:find_match2("aab", RootNode6),
+    {ok,"aa*b",3} = trie:find_match2("aabb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aababb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabbab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabbabb", RootNode6),
+    RootNode12 = trie:new([
+        {"*",      1},
+        {"/?a",    2},
+        {"/?/a",   3},
+        {"/?/b" ,  4},
+        {"/*/a",   5}]),
+    {ok,"*",1} = trie:find_match2("/alba", RootNode12),
+    {ok,"*",1} = trie:find_match2("/aa", RootNode12),
+    {ok,"*",1} = trie:find_match2("/a", RootNode12),
+    {ok,"/?a",2} = trie:find_match2("/ba", RootNode12),
+    {ok,"/?a",2} = trie:find_match2("/bcdefghijklmno___a", RootNode12),
+    {ok,"/?/a",3} = trie:find_match2("/aaaaaaaa/a", RootNode12),
+    {ok,"/?/b",4} = trie:find_match2("/a/b", RootNode12),
+    {ok,"/?/b",4} = trie:find_match2("/aa/b", RootNode12),
+    {ok,"/?/b",4} = trie:find_match2("/ab/b", RootNode12),
+    {'EXIT',badarg} = (catch trie:find_match2("/?a", RootNode12)),
+    {'EXIT',badarg} = (catch trie:find_match2("/?b", RootNode12)),
+    {'EXIT',badarg} = (catch trie:find_match2("/?a", RootNode12)),
+    {ok,"/?/a",3} = trie:find_match2("/alba-white/a", RootNode12),
+    {ok,"/*/a",5} = trie:find_match2("/alba/white/a", RootNode12),
+    RootNode13 = trie:new([
+        {"/?a",    1},
+        {"/?bbb",  2},
+        {"/?c",    3}]),
+    {ok,"/?bbb",2} = trie:find_match2("/abbb", RootNode13),
+    error = trie:find_match2("/abba", RootNode13),
+    {ok,"/?c",3} = trie:find_match2("/abbc", RootNode13),
+    RootNode14 = trie:new([
+        {"*bc",   1},
+        {"*bd",   2}]),
+    error = trie:find_match("bb", RootNode14),
+    error = trie:find_match2("bb", RootNode14),
     ok.
 
 %%%------------------------------------------------------------------------
@@ -1361,6 +1604,80 @@ wildcard_match_lists([C | Pattern], [C | L]) ->
 
 wildcard_match_lists(_, L) ->
     wildcard_match_lists_valid(L, false).
+
+wildcard_match2_lists_element(_, []) ->
+    error;
+
+wildcard_match2_lists_element(_, [C | _])
+    when C == $*; C == $? ->
+    erlang:exit(badarg);
+
+wildcard_match2_lists_element(C, [C | L]) ->
+    {ok, L};
+
+wildcard_match2_lists_element(C, [_ | L]) ->
+    wildcard_match2_lists_element(C, L).
+
+wildcard_match2_lists_valid([], Result) ->
+    Result;
+
+wildcard_match2_lists_valid([C | _], _)
+    when C == $*; C == $? ->
+    erlang:exit(badarg);
+
+wildcard_match2_lists_valid([_ | L], Result) ->
+    wildcard_match2_lists_valid(L, Result).
+
+wildcard_match2_lists_pattern0(Pattern, C, L) ->
+    case wildcard_match2_lists_element(C, L) of
+        {ok, NewL} ->
+            wildcard_match2_lists(Pattern, NewL);
+        error ->
+            wildcard_match2_lists_valid(L, false)
+    end.
+
+wildcard_match2_lists_pattern1(Pattern, C, L) ->
+    case wildcard_match2_lists_element(C, L) of
+        {ok, NewL} ->
+            case wildcard_match2_lists(Pattern, NewL) of
+                true ->
+                    true;
+                false ->
+                    wildcard_match2_lists_pattern1(Pattern, C, NewL)
+            end;
+        error ->
+            wildcard_match2_lists_valid(L, false)
+    end.
+
+wildcard_match2_lists([], []) ->
+    true;
+
+wildcard_match2_lists([], [_ | _] = L) ->
+    wildcard_match2_lists_valid(L, false);
+
+wildcard_match2_lists([_ | _], [C | _])
+    when C == $*; C == $? ->
+    erlang:exit(badarg);
+
+wildcard_match2_lists([$?], [_ | _]) ->
+    erlang:exit(badarg);
+
+wildcard_match2_lists([$?, C | Pattern], [_ | L]) ->
+    true = (C =/= $?),
+    wildcard_match2_lists_pattern0(Pattern, C, L);
+
+wildcard_match2_lists([$*], [_ | L]) ->
+    wildcard_match2_lists_valid(L, true);
+
+wildcard_match2_lists([$*, C | Pattern], [_ | L]) ->
+    true = (C =/= $*),
+    wildcard_match2_lists_pattern1(Pattern, C, L);
+
+wildcard_match2_lists([C | Pattern], [C | L]) ->
+    wildcard_match2_lists(Pattern, L);
+
+wildcard_match2_lists(_, L) ->
+    wildcard_match2_lists_valid(L, false).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
