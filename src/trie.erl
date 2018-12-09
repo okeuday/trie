@@ -1981,14 +1981,14 @@ wildcard_match2_lists([$?], [_ | _]) ->
     erlang:exit(badarg);
 
 wildcard_match2_lists([$?, C | Pattern], [_ | L]) ->
-    true = (C =/= $?),
+    true = (C =/= $*) andalso (C =/= $?),
     wildcard_match2_lists_pattern0(Pattern, C, L);
 
 wildcard_match2_lists([$*], [_ | L]) ->
     wildcard_match2_lists_valid(L, true);
 
 wildcard_match2_lists([$*, C | Pattern], [_ | L]) ->
-    true = (C =/= $*),
+    true = (C =/= $*) andalso (C =/= $?),
     wildcard_match2_lists_pattern1(Pattern, C, L);
 
 wildcard_match2_lists([C | Pattern], [C | L]) ->
