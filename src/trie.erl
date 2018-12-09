@@ -88,6 +88,9 @@
          pattern_parse/2,
          pattern_parse/3,
          pattern_suffix/2,
+         pattern2_parse/2,
+         pattern2_parse/3,
+         pattern2_suffix/2,
          prefix/3,
          size/1,
          store/2,
@@ -739,7 +742,8 @@ is_pattern([_ | Pattern], Result) ->
 %% @doc
 %% ===Test to determine if a string is a pattern (using 2 wildcard characters).===
 %% "*" and "?" are wildcard characters (equivalent to the ".+" regex).
-%% "**", "??", "*?" and "?*" are forbidden.
+%% "**", "??", "*?" and "?*" are forbidden.  "?" must not be the last
+%% character in the pattern.
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -750,6 +754,9 @@ is_pattern2(Pattern) ->
 
 is_pattern2([], Result) ->
     Result;
+
+is_pattern2([$?], _) ->
+    erlang:exit(badarg);
 
 is_pattern2([C0, C1 | _], _)
     when C0 == $* orelse C0 == $?,
@@ -1037,7 +1044,7 @@ itera_element(F, {trie_itera_done, A} = ReturnValue, I, N, Offset, Key, Data) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Parse a string based on the supplied wildcard pattern.===
-%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "*" is the wildcard character (equivalent to the ".+" regex).
 %% "**" is forbidden.
 %% @end
 %%-------------------------------------------------------------------------
@@ -1051,7 +1058,7 @@ pattern_parse(Pattern, L) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Parse a string based on the supplied wildcard pattern.===
-%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "*" is the wildcard character (equivalent to the ".+" regex).
 %% "**" is forbidden.
 %% @end
 %%-------------------------------------------------------------------------
@@ -1152,7 +1159,7 @@ pattern_parse(_, _, _, _, _) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Parse a string based on the supplied wildcard pattern to return only the suffix after the pattern.===
-%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "*" is the wildcard character (equivalent to the ".+" regex).
 %% "**" is forbidden.
 %% @end
 %%-------------------------------------------------------------------------
@@ -1203,6 +1210,238 @@ pattern_suffix_pattern(Pattern, C, L) ->
             case pattern_suffix(Pattern, NewL) of
                 error ->
                     pattern_suffix_pattern(Pattern, C, NewL);
+                Success ->
+                    Success
+            end;
+        error ->
+            error
+    end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Parse a string based on the supplied wildcard pattern (using 2 wildcard characters).===
+%% "*" and "?" are wildcard characters (equivalent to the ".+" regex).
+%% "**", "??", "*?" and "?*" are forbidden.  "?" must not be the last
+%% character in the pattern.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern2_parse(Pattern :: string(),
+                    L :: string()) -> list(string()) | 'error'.
+
+pattern2_parse(Pattern, L) ->
+    pattern2_parse(Pattern, L, default).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Parse a string based on the supplied wildcard pattern (using 2 wildcard characters).===
+%% "*" and "?" are wildcard characters (equivalent to the ".+" regex).
+%% "**", "??", "*?" and "?*" are forbidden.  "?" must not be the last
+%% character in the pattern.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern2_parse(Pattern :: string(),
+                    L :: string(),
+                    Option :: default | with_suffix | expanded) ->
+    list(string()) |                       % default
+    {list(string()), string()} |           % with_suffix
+    list(string() | {exact, string()}) |   % expanded
+    'error'.
+
+pattern2_parse(Pattern, L, Option)
+    when (Option =:= default) orelse
+         (Option =:= with_suffix) orelse
+         (Option =:= expanded) ->
+    pattern2_parse(Pattern, L, [], [], Option).
+
+pattern2_parse_result(default, Parameters, _) ->
+    lists:reverse(Parameters);
+
+pattern2_parse_result(with_suffix, Parameters, Suffix) ->
+    {lists:reverse(Parameters), lists:reverse(Suffix)};
+
+pattern2_parse_result(expanded, Parameters, Suffix) ->
+    NewParameters = if
+        Suffix /= [] ->
+            [{exact, lists:reverse(Suffix)} | Parameters];
+        true ->
+            Parameters
+    end,
+    lists:reverse(NewParameters).
+
+pattern2_parse_element(_, [], _) ->
+    error;
+
+pattern2_parse_element(C, [C | T], Segment) ->
+    {ok, T, lists:reverse(Segment)};
+
+pattern2_parse_element(_, [H | _], _)
+    when H == $*; H == $? ->
+    erlang:exit(badarg);
+
+pattern2_parse_element(C, [H | T], L) ->
+    pattern2_parse_element(C, T, [H | L]).
+
+pattern2_parse_pattern0(Pattern, C, L, Segment, Parsed, Option) ->
+    case pattern2_parse_element(C, L, Segment) of
+        {ok, NewL, NewSegment} ->
+            pattern2_parse(Pattern, NewL,
+                           [NewSegment | Parsed], [C], Option);
+        error ->
+            error
+    end.
+
+pattern2_parse_pattern1(Pattern, C, L, Segment, Parsed, Option) ->
+    case pattern2_parse_element(C, L, Segment) of
+        {ok, NewL, NewSegment} ->
+            case pattern2_parse(Pattern, NewL,
+                               [NewSegment | Parsed], [C], Option) of
+                error ->
+                    pattern2_parse_pattern1(Pattern, C, NewL,
+                                            [C | lists:reverse(NewSegment)],
+                                            Parsed, Option);
+                Success ->
+                    Success
+            end;
+        error ->
+            error
+    end.
+
+pattern2_parse([], [], Parsed, Suffix, Option) ->
+    pattern2_parse_result(Option, Parsed, Suffix);
+
+pattern2_parse([], [_ | _], _, _, _) ->
+    error;
+
+pattern2_parse([_ | _], [H | _], _, _, _)
+    when H == $*; H == $? ->
+    erlang:exit(badarg);
+
+pattern2_parse([$*], [_ | _] = L, Parsed, Suffix, Option) ->
+    NewParsed = if
+        Option =:= expanded, Suffix /= [] ->
+            [{exact, lists:reverse(Suffix)} | Parsed];
+        true ->
+            Parsed
+    end,
+    pattern2_parse_result(Option, [L | NewParsed], []);
+
+pattern2_parse([$?], _, _, _, _) ->
+    erlang:exit(badarg);
+
+pattern2_parse([C0, C1 | _], [_ | _], _, _, _)
+    when C0 == $* orelse C0 == $?,
+         C1 == $* orelse C1 == $? ->
+    erlang:exit(badarg);
+
+pattern2_parse([$?, C | Pattern], [H | T], Parsed, Suffix, Option) ->
+    if
+        C == H ->
+            error;
+        true ->
+            NewParsed = if
+                Option =:= expanded, Suffix /= [] ->
+                    [{exact, lists:reverse(Suffix)} | Parsed];
+                true ->
+                    Parsed
+            end,
+            pattern2_parse_pattern0(Pattern, C, T, [H], NewParsed, Option)
+    end;
+
+pattern2_parse([$*, C | Pattern], [H | T], Parsed, Suffix, Option) ->
+    NewParsed = if
+        Option =:= expanded, Suffix /= [] ->
+            [{exact, lists:reverse(Suffix)} | Parsed];
+        true ->
+            Parsed
+    end,
+    pattern2_parse_pattern1(Pattern, C, T, [H], NewParsed, Option);
+
+pattern2_parse([C | Pattern], [C | L], Parsed, Suffix, Option) ->
+    pattern2_parse(Pattern, L, Parsed, [C | Suffix], Option);
+
+pattern2_parse(_, _, _, _, _) ->
+    error.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Parse a string based on the supplied wildcard pattern (using 2 wildcard characters) to return only the suffix after the pattern.===
+%% "*" and "?" are wildcard characters (equivalent to the ".+" regex).
+%% "**", "??", "*?" and "?*" are forbidden.  "?" must not be the last
+%% character in the pattern.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern2_suffix(Pattern :: string(),
+                      L :: string()) ->
+    string() | 'error'.
+
+pattern2_suffix([], []) ->
+    [];
+
+pattern2_suffix([], [_ | _] = L) ->
+    L;
+
+pattern2_suffix([_ | _], [H | _])
+    when H == $*; H == $? ->
+    erlang:exit(badarg);
+
+pattern2_suffix([$*], [_ | _]) ->
+    [];
+
+pattern2_suffix([$?], _) ->
+    erlang:exit(badarg);
+
+pattern2_suffix([C0, C1 | _], [_ | _])
+    when C0 == $* orelse C0 == $?,
+         C1 == $* orelse C1 == $? ->
+    erlang:exit(badarg);
+
+pattern2_suffix([$?, C | Pattern], [H | T]) ->
+    if
+        C == H ->
+            error;
+        true ->
+            pattern2_suffix_pattern0(Pattern, C, T)
+    end;
+
+pattern2_suffix([$*, C | Pattern], [_ | T]) ->
+    pattern2_suffix_pattern1(Pattern, C, T);
+
+pattern2_suffix([C | Pattern], [C | L]) ->
+    pattern2_suffix(Pattern, L);
+
+pattern2_suffix(_, _) ->
+    error.
+
+pattern2_suffix_element(_, []) ->
+    error;
+
+pattern2_suffix_element(C, [C | T]) ->
+    {ok, T};
+
+pattern2_suffix_element(_, [H | _])
+    when H == $*; H == $? ->
+    erlang:exit(badarg);
+
+pattern2_suffix_element(C, [_ | T]) ->
+    pattern2_suffix_element(C, T).
+
+pattern2_suffix_pattern0(Pattern, C, L) ->
+    case pattern2_suffix_element(C, L) of
+        {ok, NewL} ->
+            pattern2_suffix(Pattern, NewL);
+        error ->
+            error
+    end.
+
+pattern2_suffix_pattern1(Pattern, C, L) ->
+    case pattern2_suffix_element(C, L) of
+        {ok, NewL} ->
+            case pattern2_suffix(Pattern, NewL) of
+                error ->
+                    pattern2_suffix_pattern1(Pattern, C, NewL);
                 Success ->
                     Success
             end;
@@ -1481,6 +1720,26 @@ test() ->
     ["//"] = trie:pattern_parse("*/", "///"),
     "/get" = trie:pattern_suffix("*.txt", "file.name.txt/get"),
     "/get" = trie:pattern_suffix("*/", "///get"),
+    ["aa"] = trie:pattern2_parse("aa*", "aaaa"),
+    ["b"] = trie:pattern2_parse("aa*", "aab"),
+    ["b"] = trie:pattern2_parse("aa*b", "aabb"),
+    {["b"], "b"} = trie:pattern2_parse("aa*b", "aabb", with_suffix),
+    ["b", "b"] = trie:pattern2_parse("aa*a*", "aabab"),
+    {["b", "b"], ""} = trie:pattern2_parse("aa*a*", "aabab", with_suffix),
+    ["b", "bb"] = trie:pattern2_parse("aa*a*", "aababb"),
+    ["b", "bb"] = trie:pattern2_parse("aa?a*", "aababb"),
+    ["bb", "b"] = trie:pattern2_parse("aa*a*", "aabbab"),
+    ["bb", "b"] = trie:pattern2_parse("aa?a*", "aabbab"),
+    ["bb", "bb"] = trie:pattern2_parse("aa*a*", "aabbabb"),
+    ["bb", "bb"] = trie:pattern2_parse("aa?a*", "aabbabb"),
+    error = trie:pattern2_parse("aa*a*", "aaabb"),
+    ["file.name"] = trie:pattern2_parse("*.txt", "file.name.txt"),
+    ["//"] = trie:pattern2_parse("*/", "///"),
+    "/get" = trie:pattern2_suffix("*.txt", "file.name.txt/get"),
+    error = trie:pattern2_suffix("?.txt", "file.name.txt/get"),
+    "/get" = trie:pattern2_suffix("?.txt", "file_name.txt/get"),
+    "/get" = trie:pattern2_suffix("*/", "///get"),
+    error = trie:pattern2_suffix("?/", "///get"),
     {ok, "/accounting/balances/fred",
      empty} = trie:find_match("/accounting/balances/fred",
                               trie:new(["/accounting/balances/*",
@@ -1502,6 +1761,22 @@ test() ->
      {exact, "n"}] = trie:pattern_parse("a*t*n", "addition", expanded),
     ["w",{exact,"atch"}] = trie:pattern_parse("*atch", "watch", expanded),
     [{exact,"is"},"t"] = trie:pattern_parse("is*", "ist", expanded),
+    [] = trie:pattern2_parse("aaabb", "aaabb"),
+    {[], "aaabb"} = trie:pattern2_parse("aaabb", "aaabb", with_suffix),
+    [{exact, "a"},
+     "ddi",
+     {exact, "t"},
+     "io",
+     {exact, "n"}] = trie:pattern2_parse("a*t*n", "addition", expanded),
+    [{exact, "a"},
+     "ddi",
+     {exact, "t"},
+     "io",
+     {exact, "n"}] = trie:pattern2_parse("a?t?n", "addition", expanded),
+    ["w",{exact,"atch"}] = trie:pattern2_parse("*atch", "watch", expanded),
+    ["w",{exact,"atch"}] = trie:pattern2_parse("?atch", "watch", expanded),
+    error = trie:pattern2_parse("?atch", "aatch", expanded),
+    [{exact,"is"},"t"] = trie:pattern2_parse("is*", "ist", expanded),
     false = trie:is_pattern("abcdef"),
     false = trie:is_pattern("abcde?f"),
     true = trie:is_pattern("abc*d*ef"),
@@ -1509,10 +1784,12 @@ test() ->
     false = trie:is_pattern2("abcdef"),
     true = trie:is_pattern2("abc?def"),
     true = trie:is_pattern2("abc?d*ef"),
+    true = trie:is_pattern2("abcd*ef"),
     {'EXIT',badarg} = (catch trie:is_pattern2("abc**ef")),
     {'EXIT',badarg} = (catch trie:is_pattern2("abc??ef")),
     {'EXIT',badarg} = (catch trie:is_pattern2("abc?*ef")),
     {'EXIT',badarg} = (catch trie:is_pattern2("abc*?ef")),
+    {'EXIT',badarg} = (catch trie:is_pattern2("abcef?")),
     RootNode7 = trie:from_list([{"00", zeros}, {"11", ones}]),
     RootNode8 = trie:from_list([{"0", zero}, {"1", one}]),
     ["00"] = trie:fetch_keys_similar("02", RootNode7),
