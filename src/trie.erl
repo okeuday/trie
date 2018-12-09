@@ -75,6 +75,7 @@
          from_list/1,
          is_key/2,
          is_pattern/1,
+         is_pattern2/1,
          is_prefix/2,
          is_prefixed/2,
          is_prefixed/3,
@@ -236,13 +237,14 @@ find_match_pattern_N([H | T], Key, WildValue, {I0, _, Data} = Node) ->
 %% @doc
 %% ===Find a match with patterns (using 2 wildcard characters) held within a trie.===
 %% All patterns held within the trie use the wildcard character "*" or "?"
-%% to represent a regex of ".+".  "**" or "??" within the trie will result
-%% in undefined behavior (the pattern is malformed).  The function will
-%% search for the most specific match possible, given the input string and
-%% the trie contents.  The input string must not contain wildcard characters,
-%% otherwise a badarg exit exception will occur.  The "?" wildcard character
-%% consumes the shortest match to the next character and must not be the
-%% the last character in the string (the pattern would be malformed).
+%% to represent a regex of ".+".  "**", "??", "*?", or "?*" within the
+%% trie will result in undefined behavior (the pattern is malformed).
+%% The function will search for the most specific match possible, given the
+%% input string and the trie contents.  The input string must not contain
+%% wildcard characters, otherwise a badarg exit exception will occur.
+%% The "?" wildcard character consumes the shortest match to the next
+%% character and must not be the the last character in the string
+%% (the pattern would be malformed).
 %% @end
 %%-------------------------------------------------------------------------
 
@@ -711,7 +713,7 @@ fold_match_element_N([$* | T] = Match, F, A, I, N, Offset, Prefix, Mid, Data) ->
 %%-------------------------------------------------------------------------
 %% @doc
 %% ===Test to determine if a string is a pattern.===
-%% "*" is the wildcard character (equivalent to the ".+" regex) and
+%% "*" is the wildcard character (equivalent to the ".+" regex).
 %% "**" is forbidden.
 %% @end
 %%-------------------------------------------------------------------------
@@ -732,6 +734,34 @@ is_pattern([$* | Pattern], _) ->
 
 is_pattern([_ | Pattern], Result) ->
     is_pattern(Pattern, Result).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Test to determine if a string is a pattern (using 2 wildcard characters).===
+%% "*" and "?" are wildcard characters (equivalent to the ".+" regex).
+%% "**", "??", "*?" and "?*" are forbidden.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec is_pattern2(Pattern :: string()) -> 'true' | 'false'.
+
+is_pattern2(Pattern) ->
+    is_pattern2(Pattern, false).
+
+is_pattern2([], Result) ->
+    Result;
+
+is_pattern2([C0, C1 | _], _)
+    when C0 == $* orelse C0 == $?,
+         C1 == $* orelse C1 == $? ->
+    erlang:exit(badarg);
+
+is_pattern2([H | Pattern], _)
+    when H == $*; H == $? ->
+    is_pattern2(Pattern, true);
+
+is_pattern2([_ | Pattern], Result) ->
+    is_pattern2(Pattern, Result).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1422,9 +1452,21 @@ test() ->
     {ok,"aa*a*",4} = trie:find_match("aababb", RootNode6),
     {ok,"aa*a*",4} = trie:find_match("aabbab", RootNode6),
     {ok,"aa*a*",4} = trie:find_match("aabbabb", RootNode6),
+    {ok,"aa*",2} = trie:find_match2("aaaa", RootNode6),
+    {ok,"aaaaa",5} = trie:find_match2("aaaaa", RootNode6),
+    {ok,"*",1} = trie:find_match2("aa", RootNode6),
+    {ok,"aa*",2} = trie:find_match2("aab", RootNode6),
+    {ok,"aa*b",3} = trie:find_match2("aabb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aababb", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabbab", RootNode6),
+    {ok,"aa*a*",4} = trie:find_match2("aabbabb", RootNode6),
     {'EXIT',badarg} = (catch trie:find_match("aa*", RootNode6)),
     {'EXIT',badarg} = (catch trie:find_match("aaaa*", RootNode6)),
     {'EXIT',badarg} = (catch trie:find_match("aaaaa*", RootNode6)),
+    {'EXIT',badarg} = (catch trie:find_match2("aa*", RootNode6)),
+    {'EXIT',badarg} = (catch trie:find_match2("aaaa*", RootNode6)),
+    {'EXIT',badarg} = (catch trie:find_match2("aaaaa*", RootNode6)),
     ["aa"] = trie:pattern_parse("aa*", "aaaa"),
     ["b"] = trie:pattern_parse("aa*", "aab"),
     ["b"] = trie:pattern_parse("aa*b", "aabb"),
@@ -1461,8 +1503,16 @@ test() ->
     ["w",{exact,"atch"}] = trie:pattern_parse("*atch", "watch", expanded),
     [{exact,"is"},"t"] = trie:pattern_parse("is*", "ist", expanded),
     false = trie:is_pattern("abcdef"),
+    false = trie:is_pattern("abcde?f"),
     true = trie:is_pattern("abc*d*ef"),
     {'EXIT',badarg} = (catch trie:is_pattern("abc**ef")),
+    false = trie:is_pattern2("abcdef"),
+    true = trie:is_pattern2("abc?def"),
+    true = trie:is_pattern2("abc?d*ef"),
+    {'EXIT',badarg} = (catch trie:is_pattern2("abc**ef")),
+    {'EXIT',badarg} = (catch trie:is_pattern2("abc??ef")),
+    {'EXIT',badarg} = (catch trie:is_pattern2("abc?*ef")),
+    {'EXIT',badarg} = (catch trie:is_pattern2("abc*?ef")),
     RootNode7 = trie:from_list([{"00", zeros}, {"11", ones}]),
     RootNode8 = trie:from_list([{"0", zero}, {"1", one}]),
     ["00"] = trie:fetch_keys_similar("02", RootNode7),
@@ -1488,15 +1538,6 @@ test() ->
     true = trie:is_prefixed("abcdefghijk", "ac", RootNode10),
     true = trie:is_prefixed("abcdefghijk", "bc", RootNode10),
     true = trie:is_prefixed("abcdefghijk", "ab", RootNode10),
-    {ok,"aa*",2} = trie:find_match2("aaaa", RootNode6),
-    {ok,"aaaaa",5} = trie:find_match2("aaaaa", RootNode6),
-    {ok,"*",1} = trie:find_match2("aa", RootNode6),
-    {ok,"aa*",2} = trie:find_match2("aab", RootNode6),
-    {ok,"aa*b",3} = trie:find_match2("aabb", RootNode6),
-    {ok,"aa*a*",4} = trie:find_match2("aabab", RootNode6),
-    {ok,"aa*a*",4} = trie:find_match2("aababb", RootNode6),
-    {ok,"aa*a*",4} = trie:find_match2("aabbab", RootNode6),
-    {ok,"aa*a*",4} = trie:find_match2("aabbabb", RootNode6),
     RootNode12 = trie:new([
         {"*",      1},
         {"/?a",    2},
