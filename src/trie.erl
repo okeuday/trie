@@ -1053,13 +1053,13 @@ itera_element(F, {trie_itera_done, A} = ReturnValue, I, N, Offset, Key, Data) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec pattern_fill(Pattern :: string(),
+-spec pattern_fill(FillPattern :: string(),
                    Parameters :: list(string())) ->
     {ok, string()} |
     {error, parameters_ignored | parameter_missing}.
 
-pattern_fill(Pattern, Parameters) ->
-    pattern_fill_insert(Pattern, Parameters, true).
+pattern_fill(FillPattern, Parameters) ->
+    pattern_fill_insert(FillPattern, Parameters, true).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1069,7 +1069,7 @@ pattern_fill(Pattern, Parameters) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec pattern_fill(Pattern :: string(),
+-spec pattern_fill(FillPattern :: string(),
                    Parameters :: list(string()),
                    ParametersSelected :: list(pos_integer()),
                    ParametersStrictMatching :: boolean()) ->
@@ -1079,19 +1079,19 @@ pattern_fill(Pattern, Parameters) ->
      {parameters_selected_ignored, list(pos_integer())} |
      {parameters_selected_missing, pos_integer()}}.
 
-pattern_fill(Pattern, Parameters, [], ParametersStrictMatching) ->
-    pattern_fill_insert(Pattern, Parameters, ParametersStrictMatching);
-pattern_fill(Pattern, Parameters, ParametersSelected,
+pattern_fill(FillPattern, Parameters, [], ParametersStrictMatching) ->
+    pattern_fill_insert(FillPattern, Parameters, ParametersStrictMatching);
+pattern_fill(FillPattern, Parameters, ParametersSelected,
              ParametersStrictMatching) ->
-    pattern_fill_select(Pattern, Parameters, ParametersSelected,
+    pattern_fill_select(FillPattern, Parameters, ParametersSelected,
                         ParametersStrictMatching).
 
 pattern_fill_strip([], NameOut) ->
     {ok, lists:reverse(NameOut)};
-pattern_fill_strip([$* | PatternIn], NameOut) ->
-    pattern_fill_strip(PatternIn, NameOut);
-pattern_fill_strip([C | PatternIn], NameOut) ->
-    pattern_fill_strip(PatternIn, [C | NameOut]).
+pattern_fill_strip([$* | FillPatternIn], NameOut) ->
+    pattern_fill_strip(FillPatternIn, NameOut);
+pattern_fill_strip([C | FillPatternIn], NameOut) ->
+    pattern_fill_strip(FillPatternIn, [C | NameOut]).
 
 pattern_fill_insert([], NameOut,
                     [], _) ->
@@ -1104,25 +1104,26 @@ pattern_fill_insert([], NameOut,
         true ->
             {ok, lists:reverse(NameOut)}
     end;
-pattern_fill_insert([$* | PatternIn], NameOut,
+pattern_fill_insert([$* | FillPatternIn], NameOut,
                     [], ParametersStrictMatching) ->
     if
         ParametersStrictMatching =:= true ->
             {error, parameter_missing};
         true ->
-            pattern_fill_strip(PatternIn, NameOut)
+            pattern_fill_strip(FillPatternIn, NameOut)
     end;
-pattern_fill_insert([$* | PatternIn], NameOut,
+pattern_fill_insert([$* | FillPatternIn], NameOut,
                     [Parameter | Parameters], ParametersStrictMatching) ->
-    pattern_fill_insert(PatternIn, lists:reverse(Parameter) ++ NameOut,
+    pattern_fill_insert(FillPatternIn, lists:reverse(Parameter) ++ NameOut,
                         Parameters, ParametersStrictMatching);
-pattern_fill_insert([C | PatternIn], NameOut,
+pattern_fill_insert([C | FillPatternIn], NameOut,
                     Parameters, ParametersStrictMatching) ->
-    pattern_fill_insert(PatternIn, [C | NameOut],
+    pattern_fill_insert(FillPatternIn, [C | NameOut],
                         Parameters, ParametersStrictMatching).
 
-pattern_fill_insert(PatternIn, Parameters, ParametersStrictMatching) ->
-    pattern_fill_insert(PatternIn, [], Parameters, ParametersStrictMatching).
+pattern_fill_insert(FillPatternIn, Parameters, ParametersStrictMatching) ->
+    pattern_fill_insert(FillPatternIn, [],
+                        Parameters, ParametersStrictMatching).
 
 pattern_fill_select([], NameOut, _,
                     ParametersSelected, ParametersStrictMatching) ->
@@ -1132,20 +1133,21 @@ pattern_fill_select([], NameOut, _,
         true ->
             {ok, lists:reverse(NameOut)}
     end;
-pattern_fill_select([$* | PatternIn], NameOut, _,
+pattern_fill_select([$* | FillPatternIn], NameOut, _,
                     [], ParametersStrictMatching) ->
     if
         ParametersStrictMatching =:= true ->
             {error, parameters_selected_empty};
         true ->
-            pattern_fill_strip(PatternIn, NameOut)
+            pattern_fill_strip(FillPatternIn, NameOut)
     end;
-pattern_fill_select([$* | PatternIn], NameOut, Parameters,
+pattern_fill_select([$* | FillPatternIn], NameOut, Parameters,
                     [I | ParametersSelected],
                     ParametersStrictMatching) ->
     try lists:nth(I, Parameters) of
         Parameter ->
-            pattern_fill_select(PatternIn, lists:reverse(Parameter) ++ NameOut,
+            pattern_fill_select(FillPatternIn,
+                                lists:reverse(Parameter) ++ NameOut,
                                 Parameters, ParametersSelected,
                                 ParametersStrictMatching)
     catch
@@ -1154,17 +1156,17 @@ pattern_fill_select([$* | PatternIn], NameOut, Parameters,
                 ParametersStrictMatching =:= true ->
                     {error, {parameters_selected_missing, I}};
                 true ->
-                    pattern_fill_strip(PatternIn, NameOut)
+                    pattern_fill_strip(FillPatternIn, NameOut)
             end
     end;
-pattern_fill_select([C | PatternIn], NameOut, Parameters,
+pattern_fill_select([C | FillPatternIn], NameOut, Parameters,
                     ParametersSelected, ParametersStrictMatching) ->
-    pattern_fill_select(PatternIn, [C | NameOut], Parameters,
+    pattern_fill_select(FillPatternIn, [C | NameOut], Parameters,
                         ParametersSelected, ParametersStrictMatching).
 
-pattern_fill_select(PatternIn, Parameters,
+pattern_fill_select(FillPatternIn, Parameters,
                     ParametersSelected, ParametersStrictMatching) ->
-    pattern_fill_select(PatternIn, [], Parameters,
+    pattern_fill_select(FillPatternIn, [], Parameters,
                         ParametersSelected, ParametersStrictMatching).
 
 %%-------------------------------------------------------------------------
@@ -1352,13 +1354,13 @@ pattern_suffix_pattern(Pattern, C, L) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec pattern2_fill(Pattern :: string(),
+-spec pattern2_fill(FillPattern :: string(),
                     Parameters :: list(string())) ->
     {ok, string()} |
     {error, parameters_ignored | parameter_missing}.
 
-pattern2_fill(Pattern, Parameters) ->
-    pattern2_fill_insert(Pattern, Parameters, true).
+pattern2_fill(FillPattern, Parameters) ->
+    pattern2_fill_insert(FillPattern, Parameters, true).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1369,7 +1371,7 @@ pattern2_fill(Pattern, Parameters) ->
 %% @end
 %%-------------------------------------------------------------------------
 
--spec pattern2_fill(Pattern :: string(),
+-spec pattern2_fill(FillPattern :: string(),
                     Parameters :: list(string()),
                     ParametersSelected :: list(pos_integer()),
                     ParametersStrictMatching :: boolean()) ->
@@ -1379,20 +1381,20 @@ pattern2_fill(Pattern, Parameters) ->
      {parameters_selected_ignored, list(pos_integer())} |
      {parameters_selected_missing, pos_integer()}}.
 
-pattern2_fill(Pattern, Parameters, [], ParametersStrictMatching) ->
-    pattern2_fill_insert(Pattern, Parameters, ParametersStrictMatching);
-pattern2_fill(Pattern, Parameters, ParametersSelected,
+pattern2_fill(FillPattern, Parameters, [], ParametersStrictMatching) ->
+    pattern2_fill_insert(FillPattern, Parameters, ParametersStrictMatching);
+pattern2_fill(FillPattern, Parameters, ParametersSelected,
               ParametersStrictMatching) ->
-    pattern2_fill_select(Pattern, Parameters, ParametersSelected,
+    pattern2_fill_select(FillPattern, Parameters, ParametersSelected,
                          ParametersStrictMatching).
 
 pattern2_fill_strip([], NameOut) ->
     {ok, lists:reverse(NameOut)};
-pattern2_fill_strip([C | PatternIn], NameOut)
+pattern2_fill_strip([C | FillPatternIn], NameOut)
     when C == $*; C == $? ->
-    pattern2_fill_strip(PatternIn, NameOut);
-pattern2_fill_strip([C | PatternIn], NameOut) ->
-    pattern2_fill_strip(PatternIn, [C | NameOut]).
+    pattern2_fill_strip(FillPatternIn, NameOut);
+pattern2_fill_strip([C | FillPatternIn], NameOut) ->
+    pattern2_fill_strip(FillPatternIn, [C | NameOut]).
 
 pattern2_fill_insert([], NameOut,
                      [], _) ->
@@ -1405,27 +1407,28 @@ pattern2_fill_insert([], NameOut,
         true ->
             {ok, lists:reverse(NameOut)}
     end;
-pattern2_fill_insert([C | PatternIn], NameOut,
+pattern2_fill_insert([C | FillPatternIn], NameOut,
                      [], ParametersStrictMatching)
     when C == $*; C == $? ->
     if
         ParametersStrictMatching =:= true ->
             {error, parameter_missing};
         true ->
-            pattern2_fill_strip(PatternIn, NameOut)
+            pattern2_fill_strip(FillPatternIn, NameOut)
     end;
-pattern2_fill_insert([C | PatternIn], NameOut,
+pattern2_fill_insert([C | FillPatternIn], NameOut,
                      [Parameter | Parameters], ParametersStrictMatching)
     when C == $*; C == $? ->
-    pattern2_fill_insert(PatternIn, lists:reverse(Parameter) ++ NameOut,
+    pattern2_fill_insert(FillPatternIn, lists:reverse(Parameter) ++ NameOut,
                          Parameters, ParametersStrictMatching);
-pattern2_fill_insert([C | PatternIn], NameOut,
+pattern2_fill_insert([C | FillPatternIn], NameOut,
                      Parameters, ParametersStrictMatching) ->
-    pattern2_fill_insert(PatternIn, [C | NameOut],
+    pattern2_fill_insert(FillPatternIn, [C | NameOut],
                          Parameters, ParametersStrictMatching).
 
-pattern2_fill_insert(PatternIn, Parameters, ParametersStrictMatching) ->
-    pattern2_fill_insert(PatternIn, [], Parameters, ParametersStrictMatching).
+pattern2_fill_insert(FillPatternIn, Parameters, ParametersStrictMatching) ->
+    pattern2_fill_insert(FillPatternIn, [],
+                         Parameters, ParametersStrictMatching).
 
 pattern2_fill_select([], NameOut, _,
                      ParametersSelected, ParametersStrictMatching) ->
@@ -1435,22 +1438,23 @@ pattern2_fill_select([], NameOut, _,
         true ->
             {ok, lists:reverse(NameOut)}
     end;
-pattern2_fill_select([C | PatternIn], NameOut, _,
+pattern2_fill_select([C | FillPatternIn], NameOut, _,
                      [], ParametersStrictMatching)
     when C == $*; C == $? ->
     if
         ParametersStrictMatching =:= true ->
             {error, parameters_selected_empty};
         true ->
-            pattern2_fill_strip(PatternIn, NameOut)
+            pattern2_fill_strip(FillPatternIn, NameOut)
     end;
-pattern2_fill_select([C | PatternIn], NameOut, Parameters,
+pattern2_fill_select([C | FillPatternIn], NameOut, Parameters,
                      [I | ParametersSelected],
                      ParametersStrictMatching)
     when C == $*; C == $? ->
     try lists:nth(I, Parameters) of
         Parameter ->
-            pattern2_fill_select(PatternIn, lists:reverse(Parameter) ++ NameOut,
+            pattern2_fill_select(FillPatternIn,
+                                 lists:reverse(Parameter) ++ NameOut,
                                  Parameters, ParametersSelected,
                                  ParametersStrictMatching)
     catch
@@ -1459,17 +1463,17 @@ pattern2_fill_select([C | PatternIn], NameOut, Parameters,
                 ParametersStrictMatching =:= true ->
                     {error, {parameters_selected_missing, I}};
                 true ->
-                    pattern2_fill_strip(PatternIn, NameOut)
+                    pattern2_fill_strip(FillPatternIn, NameOut)
             end
     end;
-pattern2_fill_select([C | PatternIn], NameOut, Parameters,
+pattern2_fill_select([C | FillPatternIn], NameOut, Parameters,
                      ParametersSelected, ParametersStrictMatching) ->
-    pattern2_fill_select(PatternIn, [C | NameOut], Parameters,
+    pattern2_fill_select(FillPatternIn, [C | NameOut], Parameters,
                          ParametersSelected, ParametersStrictMatching).
 
-pattern2_fill_select(PatternIn, Parameters,
+pattern2_fill_select(FillPatternIn, Parameters,
                      ParametersSelected, ParametersStrictMatching) ->
-    pattern2_fill_select(PatternIn, [], Parameters,
+    pattern2_fill_select(FillPatternIn, [], Parameters,
                          ParametersSelected, ParametersStrictMatching).
 
 %%-------------------------------------------------------------------------
