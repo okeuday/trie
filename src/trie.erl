@@ -85,9 +85,13 @@
          merge/3,
          new/0,
          new/1,
+         pattern_fill/2,
+         pattern_fill/4,
          pattern_parse/2,
          pattern_parse/3,
          pattern_suffix/2,
+         pattern2_fill/2,
+         pattern2_fill/4,
          pattern2_parse/2,
          pattern2_parse/3,
          pattern2_suffix/2,
@@ -1043,6 +1047,128 @@ itera_element(F, {trie_itera_done, A} = ReturnValue, I, N, Offset, Key, Data) ->
 
 %%-------------------------------------------------------------------------
 %% @doc
+%% ===Fill wildcard characters in a string.===
+%% The "*" wildcard character may be used consecutively by this function
+%% to have parameters concatenated.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern_fill(Pattern :: string(),
+                   Parameters :: list(string())) ->
+    {ok, string()} |
+    {error, parameters_ignored | parameter_missing}.
+
+pattern_fill(Pattern, Parameters) ->
+    pattern_fill_insert(Pattern, Parameters, true).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fill wildcard characters in a string.===
+%% The "*" wildcard character may be used consecutively by this function
+%% to have parameters concatenated.
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern_fill(Pattern :: string(),
+                   Parameters :: list(string()),
+                   ParametersSelected :: list(pos_integer()),
+                   ParametersStrictMatching :: boolean()) ->
+    {ok, string()} |
+    {error,
+     parameters_ignored | parameter_missing | parameters_selected_empty |
+     {parameters_selected_ignored, list(pos_integer())} |
+     {parameters_selected_missing, pos_integer()}}.
+
+pattern_fill(Pattern, Parameters, [], ParametersStrictMatching) ->
+    pattern_fill_insert(Pattern, Parameters, ParametersStrictMatching);
+pattern_fill(Pattern, Parameters, ParametersSelected,
+             ParametersStrictMatching) ->
+    pattern_fill_select(Pattern, Parameters, ParametersSelected,
+                        ParametersStrictMatching).
+
+pattern_fill_strip([], NameOut) ->
+    {ok, lists:reverse(NameOut)};
+pattern_fill_strip([$* | PatternIn], NameOut) ->
+    pattern_fill_strip(PatternIn, NameOut);
+pattern_fill_strip([C | PatternIn], NameOut) ->
+    pattern_fill_strip(PatternIn, [C | NameOut]).
+
+pattern_fill_insert([], NameOut,
+                    [], _) ->
+    {ok, lists:reverse(NameOut)};
+pattern_fill_insert([], NameOut,
+                    [_ | _], ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameters_ignored};
+        true ->
+            {ok, lists:reverse(NameOut)}
+    end;
+pattern_fill_insert([$* | PatternIn], NameOut,
+                    [], ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameter_missing};
+        true ->
+            pattern_fill_strip(PatternIn, NameOut)
+    end;
+pattern_fill_insert([$* | PatternIn], NameOut,
+                    [Parameter | Parameters], ParametersStrictMatching) ->
+    pattern_fill_insert(PatternIn, lists:reverse(Parameter) ++ NameOut,
+                        Parameters, ParametersStrictMatching);
+pattern_fill_insert([C | PatternIn], NameOut,
+                    Parameters, ParametersStrictMatching) ->
+    pattern_fill_insert(PatternIn, [C | NameOut],
+                        Parameters, ParametersStrictMatching).
+
+pattern_fill_insert(PatternIn, Parameters, ParametersStrictMatching) ->
+    pattern_fill_insert(PatternIn, [], Parameters, ParametersStrictMatching).
+
+pattern_fill_select([], NameOut, _,
+                    ParametersSelected, ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true, ParametersSelected /= [] ->
+            {error, {parameters_selected_ignored, ParametersSelected}};
+        true ->
+            {ok, lists:reverse(NameOut)}
+    end;
+pattern_fill_select([$* | PatternIn], NameOut, _,
+                    [], ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameters_selected_empty};
+        true ->
+            pattern_fill_strip(PatternIn, NameOut)
+    end;
+pattern_fill_select([$* | PatternIn], NameOut, Parameters,
+                    [I | ParametersSelected],
+                    ParametersStrictMatching) ->
+    try lists:nth(I, Parameters) of
+        Parameter ->
+            pattern_fill_select(PatternIn, lists:reverse(Parameter) ++ NameOut,
+                                Parameters, ParametersSelected,
+                                ParametersStrictMatching)
+    catch
+        error:_ ->
+            if
+                ParametersStrictMatching =:= true ->
+                    {error, {parameters_selected_missing, I}};
+                true ->
+                    pattern_fill_strip(PatternIn, NameOut)
+            end
+    end;
+pattern_fill_select([C | PatternIn], NameOut, Parameters,
+                    ParametersSelected, ParametersStrictMatching) ->
+    pattern_fill_select(PatternIn, [C | NameOut], Parameters,
+                        ParametersSelected, ParametersStrictMatching).
+
+pattern_fill_select(PatternIn, Parameters,
+                    ParametersSelected, ParametersStrictMatching) ->
+    pattern_fill_select(PatternIn, [], Parameters,
+                        ParametersSelected, ParametersStrictMatching).
+
+%%-------------------------------------------------------------------------
+%% @doc
 %% ===Parse a string based on the supplied wildcard pattern.===
 %% "*" is the wildcard character (equivalent to the ".+" regex).
 %% "**" is forbidden.
@@ -1216,6 +1342,135 @@ pattern_suffix_pattern(Pattern, C, L) ->
         error ->
             error
     end.
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fill wildcard characters in a string.===
+%% The "*" and "?" wildcard characters may be used consecutively by this
+%% function to have parameters concatenated (both are processed the same
+%% way by this function).
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern2_fill(Pattern :: string(),
+                    Parameters :: list(string())) ->
+    {ok, string()} |
+    {error, parameters_ignored | parameter_missing}.
+
+pattern2_fill(Pattern, Parameters) ->
+    pattern2_fill_insert(Pattern, Parameters, true).
+
+%%-------------------------------------------------------------------------
+%% @doc
+%% ===Fill wildcard characters in a string.===
+%% The "*" and "?" wildcard characters may be used consecutively by this
+%% function to have parameters concatenated (both are processed the same
+%% way by this function).
+%% @end
+%%-------------------------------------------------------------------------
+
+-spec pattern2_fill(Pattern :: string(),
+                    Parameters :: list(string()),
+                    ParametersSelected :: list(pos_integer()),
+                    ParametersStrictMatching :: boolean()) ->
+    {ok, string()} |
+    {error,
+     parameters_ignored | parameter_missing | parameters_selected_empty |
+     {parameters_selected_ignored, list(pos_integer())} |
+     {parameters_selected_missing, pos_integer()}}.
+
+pattern2_fill(Pattern, Parameters, [], ParametersStrictMatching) ->
+    pattern2_fill_insert(Pattern, Parameters, ParametersStrictMatching);
+pattern2_fill(Pattern, Parameters, ParametersSelected,
+              ParametersStrictMatching) ->
+    pattern2_fill_select(Pattern, Parameters, ParametersSelected,
+                         ParametersStrictMatching).
+
+pattern2_fill_strip([], NameOut) ->
+    {ok, lists:reverse(NameOut)};
+pattern2_fill_strip([C | PatternIn], NameOut)
+    when C == $*; C == $? ->
+    pattern2_fill_strip(PatternIn, NameOut);
+pattern2_fill_strip([C | PatternIn], NameOut) ->
+    pattern2_fill_strip(PatternIn, [C | NameOut]).
+
+pattern2_fill_insert([], NameOut,
+                     [], _) ->
+    {ok, lists:reverse(NameOut)};
+pattern2_fill_insert([], NameOut,
+                     [_ | _], ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameters_ignored};
+        true ->
+            {ok, lists:reverse(NameOut)}
+    end;
+pattern2_fill_insert([C | PatternIn], NameOut,
+                     [], ParametersStrictMatching)
+    when C == $*; C == $? ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameter_missing};
+        true ->
+            pattern2_fill_strip(PatternIn, NameOut)
+    end;
+pattern2_fill_insert([C | PatternIn], NameOut,
+                     [Parameter | Parameters], ParametersStrictMatching)
+    when C == $*; C == $? ->
+    pattern2_fill_insert(PatternIn, lists:reverse(Parameter) ++ NameOut,
+                         Parameters, ParametersStrictMatching);
+pattern2_fill_insert([C | PatternIn], NameOut,
+                     Parameters, ParametersStrictMatching) ->
+    pattern2_fill_insert(PatternIn, [C | NameOut],
+                         Parameters, ParametersStrictMatching).
+
+pattern2_fill_insert(PatternIn, Parameters, ParametersStrictMatching) ->
+    pattern2_fill_insert(PatternIn, [], Parameters, ParametersStrictMatching).
+
+pattern2_fill_select([], NameOut, _,
+                     ParametersSelected, ParametersStrictMatching) ->
+    if
+        ParametersStrictMatching =:= true, ParametersSelected /= [] ->
+            {error, {parameters_selected_ignored, ParametersSelected}};
+        true ->
+            {ok, lists:reverse(NameOut)}
+    end;
+pattern2_fill_select([C | PatternIn], NameOut, _,
+                     [], ParametersStrictMatching)
+    when C == $*; C == $? ->
+    if
+        ParametersStrictMatching =:= true ->
+            {error, parameters_selected_empty};
+        true ->
+            pattern2_fill_strip(PatternIn, NameOut)
+    end;
+pattern2_fill_select([C | PatternIn], NameOut, Parameters,
+                     [I | ParametersSelected],
+                     ParametersStrictMatching)
+    when C == $*; C == $? ->
+    try lists:nth(I, Parameters) of
+        Parameter ->
+            pattern2_fill_select(PatternIn, lists:reverse(Parameter) ++ NameOut,
+                                 Parameters, ParametersSelected,
+                                 ParametersStrictMatching)
+    catch
+        error:_ ->
+            if
+                ParametersStrictMatching =:= true ->
+                    {error, {parameters_selected_missing, I}};
+                true ->
+                    pattern2_fill_strip(PatternIn, NameOut)
+            end
+    end;
+pattern2_fill_select([C | PatternIn], NameOut, Parameters,
+                     ParametersSelected, ParametersStrictMatching) ->
+    pattern2_fill_select(PatternIn, [C | NameOut], Parameters,
+                         ParametersSelected, ParametersStrictMatching).
+
+pattern2_fill_select(PatternIn, Parameters,
+                     ParametersSelected, ParametersStrictMatching) ->
+    pattern2_fill_select(PatternIn, [], Parameters,
+                         ParametersSelected, ParametersStrictMatching).
 
 %%-------------------------------------------------------------------------
 %% @doc
@@ -1847,6 +2102,39 @@ test() ->
         {"*bd",   2}]),
     error = trie:find_match("bb", RootNode14),
     error = trie:find_match2("bb", RootNode14),
+    FillPattern0 = "/**/*",
+    Parameters0 = ["a/", "b", "c"],
+    Parameters1 = ["ignore1", "a/", "ignore2", "b", "c"],
+    FillError0 = parameters_selected_empty,
+    FillError1 = parameters_selected_ignored,
+    FillError2 = parameters_selected_missing,
+    {ok, "/a/b/c"} = trie:pattern_fill(FillPattern0, Parameters0),
+    {ok, "/a/b/c"} = trie:pattern_fill(FillPattern0, Parameters1,
+                                       [2, 4, 5], false),
+    {ok, "/a/b/"} = trie:pattern_fill(FillPattern0, Parameters1,
+                                       [2, 4], false),
+    {ok, "/a/b/c"} = trie:pattern_fill(FillPattern0, Parameters1,
+                                       [2, 4, 5], true),
+    {error, FillError0} = trie:pattern_fill(FillPattern0, Parameters1,
+                                            [2, 4], true),
+    {error, {FillError1, [1]}} = trie:pattern_fill(FillPattern0, Parameters1,
+                                                   [2, 4, 5, 1], true),
+    {error, {FillError2, 6}} = trie:pattern_fill(FillPattern0, Parameters1,
+                                                 [2, 4, 6], true),
+    FillPattern1 = "/??/?",
+    {ok, "/a/b/c"} = trie:pattern2_fill(FillPattern1, Parameters0),
+    {ok, "/a/b/c"} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                        [2, 4, 5], false),
+    {ok, "/a/b/"} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                        [2, 4], false),
+    {ok, "/a/b/c"} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                        [2, 4, 5], true),
+    {error, FillError0} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                             [2, 4], true),
+    {error, {FillError1, [1]}} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                                    [2, 4, 5, 1], true),
+    {error, {FillError2, 6}} = trie:pattern2_fill(FillPattern1, Parameters1,
+                                                  [2, 4, 6], true),
     ok.
 
 %%%------------------------------------------------------------------------
