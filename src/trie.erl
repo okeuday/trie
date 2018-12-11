@@ -316,12 +316,12 @@ find_match2_node([H | T] = Match, Key, {I0, I1, Data} = Node)
             Result
     end.
 
-find_match2_pattern0_0([_ | _] = Match, Key, {I0, I1, Data})
+find_match2_pattern0_0([H | T] = Match, Key, {I0, I1, Data})
     when $? >= I0, $? =< I1 ->
     {ChildNode, Value} = erlang:element($? - I0 + 1, Data),
     if
         is_tuple(ChildNode) ->
-            find_match2_pattern0_1(Match, [$? | Key], ChildNode);
+            find_match2_pattern0_1(T, H, [$? | Key], ChildNode);
         Value =:= error; ChildNode =:= [] ->
             error;
         true ->
@@ -337,11 +337,11 @@ find_match2_pattern0_0([_ | _] = Match, Key, {I0, I1, Data})
 find_match2_pattern0_0(_, _, _) ->
     error.
 
-find_match2_pattern0_1([H | T], Key, {I0, I1, _} = Node)
+find_match2_pattern0_1(T, H, Key, {I0, I1, _} = Node)
     when H < I0; H > I1 ->
     find_match2_pattern0_N(T, undefined, Key, Node);
 
-find_match2_pattern0_1([H | T], Key, {I0, _, Data} = Node) ->
+find_match2_pattern0_1(T, H, Key, {I0, _, Data} = Node) ->
     {_, Value} = erlang:element(H - I0 + 1, Data),
     if
         Value =:= error ->
