@@ -6,7 +6,7 @@ defmodule Trie.Mixfile do
 
   def project do
     [app: :trie,
-     version: "1.7.4",
+     version: "1.7.5",
      language: :erlang,
      erlc_options: [
        :debug_info,
@@ -37,7 +37,7 @@ defmodule Trie.Mixfile do
   end
 
   defp package do
-    [files: ~w(src doc rebar.config README.markdown),
+    [files: ~w(src doc test rebar.config README.markdown),
      maintainers: ["Michael Truog"],
      licenses: ["MIT"],
      links: %{"GitHub" => "https://github.com/okeuday/trie"}]
