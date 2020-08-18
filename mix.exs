@@ -37,7 +37,7 @@ defmodule Trie.Mixfile do
   end
 
   defp package do
-    [files: ~w(src doc test rebar.config README.markdown),
+    [files: ~w(src doc test rebar.config README.markdown LICENSE),
      maintainers: ["Michael Truog"],
      licenses: ["MIT"],
      links: %{"GitHub" => "https://github.com/okeuday/trie"}]
